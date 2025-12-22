@@ -1,4 +1,4 @@
-package commands
+package table
 
 import (
 	"context"
@@ -12,17 +12,17 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var tableListCmd = &cobra.Command{
+var listCmd = &cobra.Command{
 	Use:     "list <database-name>",
 	Aliases: []string{"ls"},
 	Short:   "List all tables in a database",
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		runTableList(args[0])
+		runList(args[0])
 	},
 }
 
-func runTableList(name string) {
+func runList(name string) {
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)
@@ -84,5 +84,3 @@ func runTableList(name string) {
 	}
 	fmt.Println()
 }
-
-// HAPUS fungsi getDriverName() yang lama

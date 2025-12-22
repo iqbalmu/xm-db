@@ -12,6 +12,13 @@ import (
 	"github.com/docker/go-connections/nat"
 )
 
+const (
+	// DefaultStopTimeout is the default timeout for stopping containers
+	DefaultStopTimeout = 10
+	// HealthCheckInterval is the interval between health checks
+	HealthCheckInterval = 1 * time.Second
+)
+
 type DockerManager struct {
 	client *client.Client
 }
@@ -88,7 +95,7 @@ func (d *DockerManager) StartContainer(ctx context.Context, containerID string) 
 }
 
 func (d *DockerManager) StopContainer(ctx context.Context, containerID string) error {
-	timeout := 10
+	timeout := DefaultStopTimeout
 	return d.client.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout})
 }
 
@@ -111,7 +118,7 @@ func (d *DockerManager) WaitForHealthy(ctx context.Context, containerID string, 
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	ticker := time.NewTicker(1 * time.Second)
+	ticker := time.NewTicker(HealthCheckInterval)
 	defer ticker.Stop()
 
 	for {

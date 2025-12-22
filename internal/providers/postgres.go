@@ -16,13 +16,13 @@ func NewPostgresProvider() *PostgresProvider {
 
 func (p *PostgresProvider) GetImageName(version string) string {
 	if version == "" {
-		version = "16"
+		version = DefaultPostgresVersion
 	}
 	return fmt.Sprintf("postgres:%s", version)
 }
 
 func (p *PostgresProvider) GetDefaultPort() int {
-	return 5432
+	return DefaultPostgresPort
 }
 
 func (p *PostgresProvider) GetContainerPort() string {

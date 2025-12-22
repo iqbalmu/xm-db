@@ -1,4 +1,4 @@
-package commands
+package db
 
 import (
 	"context"
@@ -12,21 +12,21 @@ import (
 
 var removeForce bool
 
-var dbRemoveCmd = &cobra.Command{
+var removeCmd = &cobra.Command{
 	Use:     "remove <name>",
 	Aliases: []string{"rm", "delete"},
 	Short:   "Remove a database",
 	Args:    cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		runDBRemove(args[0])
+		runRemove(args[0])
 	},
 }
 
 func init() {
-	dbRemoveCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal without confirmation")
+	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal without confirmation")
 }
 
-func runDBRemove(name string) {
+func runRemove(name string) {
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)

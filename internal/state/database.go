@@ -19,3 +19,22 @@ type Database struct {
 	CreatedAt     time.Time `json:"created_at"`
 	Status        string    `json:"status"`
 }
+
+// GetUsername returns the username to use for connections
+func (d *Database) GetUsername() string {
+	if d.User != "" {
+		return d.User
+	}
+	if d.Provider == "postgres" {
+		return "postgres"
+	}
+	return "root"
+}
+
+// GetPassword returns the password to use for connections
+func (d *Database) GetPassword() string {
+	if d.UserPassword != "" {
+		return d.UserPassword
+	}
+	return d.RootPassword
+}

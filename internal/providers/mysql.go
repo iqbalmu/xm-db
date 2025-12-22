@@ -16,13 +16,13 @@ func NewMySQLProvider() *MySQLProvider {
 
 func (m *MySQLProvider) GetImageName(version string) string {
 	if version == "" {
-		version = "8.0"
+		version = DefaultMySQLVersion
 	}
 	return fmt.Sprintf("mysql:%s", version)
 }
 
 func (m *MySQLProvider) GetDefaultPort() int {
-	return 3306
+	return DefaultMySQLPort
 }
 
 func (m *MySQLProvider) GetContainerPort() string {

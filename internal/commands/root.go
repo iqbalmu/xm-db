@@ -4,6 +4,9 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
+	"github.com/iqbalmu/dbm/internal/commands/db"
+	"github.com/iqbalmu/dbm/internal/commands/provider"
+	"github.com/iqbalmu/dbm/internal/commands/table"
 	"github.com/spf13/cobra"
 )
 
@@ -26,9 +29,9 @@ func Execute() error {
 func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(statusCmd)
-	rootCmd.AddCommand(dbCmd)
-	rootCmd.AddCommand(providerCmd)
-	rootCmd.AddCommand(tableCmd)
+	rootCmd.AddCommand(db.Cmd)
+	rootCmd.AddCommand(provider.Cmd)
+	rootCmd.AddCommand(table.Cmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(connectCmd)
 }

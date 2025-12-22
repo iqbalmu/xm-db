@@ -1,4 +1,4 @@
-package commands
+package table
 
 import (
 	"context"
@@ -9,22 +9,22 @@ import (
 	"github.com/fatih/color"
 	"github.com/iqbalmu/dbm/internal/providers"
 	"github.com/iqbalmu/dbm/internal/state"
-	"github.com/iqbalmu/dbm/pkg/utils" // TAMBAH IMPORT
+	"github.com/iqbalmu/dbm/pkg/utils"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
 
-var tableDescribeCmd = &cobra.Command{
+var describeCmd = &cobra.Command{
 	Use:     "describe <database-name> <table-name>",
 	Aliases: []string{"desc"},
 	Short:   "Describe table structure",
 	Args:    cobra.ExactArgs(2),
 	Run: func(cmd *cobra.Command, args []string) {
-		runTableDescribe(args[0], args[1])
+		runDescribe(args[0], args[1])
 	},
 }
 
-func runTableDescribe(dbName, tableName string) {
+func runDescribe(dbName, tableName string) {
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)
@@ -135,5 +135,3 @@ func runTableDescribe(dbName, tableName string) {
 
 	fmt.Println()
 }
-
-// HAPUS fungsi getDriverName() yang lama

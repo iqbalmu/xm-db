@@ -1,4 +1,4 @@
-package commands
+package db
 
 import (
 	"context"
@@ -9,16 +9,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var dbStopCmd = &cobra.Command{
+var stopCmd = &cobra.Command{
 	Use:   "stop <name>",
 	Short: "Stop a database",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		runDBStop(args[0])
+		runStop(args[0])
 	},
 }
 
-func runDBStop(name string) {
+func runStop(name string) {
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)

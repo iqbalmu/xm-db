@@ -1,4 +1,4 @@
-package commands
+package db
 
 import (
 	"context"
@@ -7,19 +7,20 @@ import (
 	"github.com/fatih/color"
 	"github.com/iqbalmu/dbm/internal/container"
 	"github.com/iqbalmu/dbm/internal/state"
+	"github.com/iqbalmu/dbm/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
-var dbInfoCmd = &cobra.Command{
+var infoCmd = &cobra.Command{
 	Use:   "info <name>",
 	Short: "Show detailed information about a database",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		runDBInfo(args[0])
+		runInfo(args[0])
 	},
 }
 
-func runDBInfo(name string) {
+func runInfo(name string) {
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)
@@ -95,14 +96,14 @@ func runDBInfo(name string) {
 	titleColor.Println("Connection Information:")
 	fmt.Println(color.CyanString("───────────────────────────────────────"))
 
-	connStr := ""
-	if db.Provider == "mysql" {
-		connStr = fmt.Sprintf("mysql://%s:%s@localhost:%d/%s",
-			db.User, db.UserPassword, db.Port, db.DatabaseName)
-	} else {
-		connStr = fmt.Sprintf("postgres://%s:%s@localhost:%d/%s",
-			db.User, db.UserPassword, db.Port, db.DatabaseName)
-	}
+	connStr := utils.BuildConnectionString(
+		db.Provider,
+		db.GetUsername(),
+		db.GetPassword(),
+		"localhost",
+		db.Port,
+		db.DatabaseName,
+	)
 
 	labelColor.Print("Connection String: ")
 	valueColor.Println(connStr)

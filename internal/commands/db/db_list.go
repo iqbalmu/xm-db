@@ -1,4 +1,4 @@
-package commands
+package db
 
 import (
 	"context"
@@ -12,16 +12,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var dbListCmd = &cobra.Command{
+var listCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List all managed databases",
 	Run: func(cmd *cobra.Command, args []string) {
-		runDBList()
+		runList()
 	},
 }
 
-func runDBList() {
+func runList() {
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)

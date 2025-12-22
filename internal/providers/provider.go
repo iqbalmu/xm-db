@@ -5,6 +5,18 @@ import (
 	"database/sql"
 )
 
+const (
+	// DefaultMySQLPort is the default port for MySQL
+	DefaultMySQLPort = 3306
+	// DefaultPostgresPort is the default port for PostgreSQL
+	DefaultPostgresPort = 5432
+
+	// DefaultMySQLVersion is the default MySQL version
+	DefaultMySQLVersion = "8.0"
+	// DefaultPostgresVersion is the default PostgreSQL version
+	DefaultPostgresVersion = "16"
+)
+
 type Provider interface {
 	GetImageName(version string) string
 	GetDefaultPort() int

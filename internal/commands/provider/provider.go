@@ -1,4 +1,4 @@
-package commands
+package provider
 
 import (
 	"fmt"
@@ -9,24 +9,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var providerCmd = &cobra.Command{
+// Cmd is the provider management command
+var Cmd = &cobra.Command{
 	Use:   "provider",
 	Short: "Manage database providers",
 }
 
-var providerListCmd = &cobra.Command{
+var listCmd = &cobra.Command{
 	Use:   "list",
 	Short: "List available database providers",
 	Run: func(cmd *cobra.Command, args []string) {
-		runProviderList()
+		runList()
 	},
 }
 
 func init() {
-	providerCmd.AddCommand(providerListCmd)
+	Cmd.AddCommand(listCmd)
 }
 
-func runProviderList() {
+func runList() {
 	titleColor := color.New(color.FgCyan, color.Bold)
 	titleColor.Println("\n📦 Available Database Providers:")
 

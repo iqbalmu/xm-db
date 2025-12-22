@@ -5,6 +5,7 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/iqbalmu/dbm/internal/state"
+	"github.com/iqbalmu/dbm/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -36,24 +37,15 @@ func runConnect(name string) {
 		return
 	}
 
-	connStr := ""
-	if db.Provider == "mysql" {
-		if db.User != "" {
-			connStr = fmt.Sprintf("mysql://%s:%s@localhost:%d/%s",
-				db.User, db.UserPassword, db.Port, db.DatabaseName)
-		} else {
-			connStr = fmt.Sprintf("mysql://root:%s@localhost:%d/%s",
-				db.RootPassword, db.Port, db.DatabaseName)
-		}
-	} else {
-		if db.User != "" {
-			connStr = fmt.Sprintf("postgres://%s:%s@localhost:%d/%s",
-				db.User, db.UserPassword, db.Port, db.DatabaseName)
-		} else {
-			connStr = fmt.Sprintf("postgres://postgres:%s@localhost:%d/%s",
-				db.RootPassword, db.Port, db.DatabaseName)
-		}
-	}
+	// Build connection string using helper methods
+	connStr := utils.BuildConnectionString(
+		db.Provider,
+		db.GetUsername(),
+		db.GetPassword(),
+		"localhost",
+		db.Port,
+		db.DatabaseName,
+	)
 
 	switch connectFormat {
 	case "json":

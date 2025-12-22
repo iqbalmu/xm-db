@@ -2,8 +2,18 @@ package state
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
+)
+
+const (
+	// StateDir is the subdirectory name for database state files
+	StateDir = ".dbm"
+	// DatabasesDir is the subdirectory for database configurations
+	DatabasesDir = "databases"
+	// StateFileExt is the extension for state files
+	StateFileExt = ".json"
 )
 
 type Manager struct {
@@ -13,58 +23,70 @@ type Manager struct {
 func NewManager() (*Manager, error) {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to get home directory: %w", err)
 	}
 
-	stateDir := filepath.Join(homeDir, ".dbm", "databases")
+	stateDir := filepath.Join(homeDir, StateDir, DatabasesDir)
 	if err := os.MkdirAll(stateDir, 0755); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create state directory: %w", err)
 	}
 
 	return &Manager{stateDir: stateDir}, nil
 }
 
 func (m *Manager) Save(db *Database) error {
-	filePath := filepath.Join(m.stateDir, db.Name+".json")
+	filePath := filepath.Join(m.stateDir, db.Name+StateFileExt)
 	data, err := json.MarshalIndent(db, "", "  ")
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to marshal database state: %w", err)
 	}
-	return os.WriteFile(filePath, data, 0644)
+	if err := os.WriteFile(filePath, data, 0644); err != nil {
+		return fmt.Errorf("failed to write state file: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) Load(name string) (*Database, error) {
-	filePath := filepath.Join(m.stateDir, name+".json")
+	filePath := filepath.Join(m.stateDir, name+StateFileExt)
 	data, err := os.ReadFile(filePath)
 	if err != nil {
-		return nil, err
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("database '%s' not found", name)
+		}
+		return nil, fmt.Errorf("failed to read state file: %w", err)
 	}
 
 	var db Database
 	if err := json.Unmarshal(data, &db); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to unmarshal database state: %w", err)
 	}
 	return &db, nil
 }
 
 func (m *Manager) Delete(name string) error {
-	filePath := filepath.Join(m.stateDir, name+".json")
-	return os.Remove(filePath)
+	filePath := filepath.Join(m.stateDir, name+StateFileExt)
+	if err := os.Remove(filePath); err != nil {
+		if os.IsNotExist(err) {
+			return fmt.Errorf("database '%s' not found", name)
+		}
+		return fmt.Errorf("failed to delete state file: %w", err)
+	}
+	return nil
 }
 
 func (m *Manager) List() ([]*Database, error) {
 	entries, err := os.ReadDir(m.stateDir)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to read state directory: %w", err)
 	}
 
 	var databases []*Database
 	for _, entry := range entries {
-		if entry.IsDir() || filepath.Ext(entry.Name()) != ".json" {
+		if entry.IsDir() || filepath.Ext(entry.Name()) != StateFileExt {
 			continue
 		}
 
-		name := entry.Name()[:len(entry.Name())-5] // remove .json
+		name := entry.Name()[:len(entry.Name())-len(StateFileExt)]
 		db, err := m.Load(name)
 		if err != nil {
 			continue
@@ -76,7 +98,7 @@ func (m *Manager) List() ([]*Database, error) {
 }
 
 func (m *Manager) Exists(name string) bool {
-	filePath := filepath.Join(m.stateDir, name+".json")
+	filePath := filepath.Join(m.stateDir, name+StateFileExt)
 	_, err := os.Stat(filePath)
 	return err == nil
 }

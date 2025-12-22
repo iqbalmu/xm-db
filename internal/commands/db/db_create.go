@@ -1,10 +1,9 @@
-package commands
+package db
 
 import (
 	"context"
 	"database/sql"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -12,7 +11,16 @@ import (
 	"github.com/iqbalmu/dbm/internal/container"
 	"github.com/iqbalmu/dbm/internal/providers"
 	"github.com/iqbalmu/dbm/internal/state"
+	"github.com/iqbalmu/dbm/pkg/utils"
 	"github.com/spf13/cobra"
+)
+
+const (
+	defaultMySQLVersion    = "8.0"
+	defaultPostgresVersion = "16"
+	defaultUsername        = "dev_user"
+	containerWaitTimeout   = 30 * time.Second
+	containerInitDelay     = 5 * time.Second
 )
 
 var (
@@ -22,23 +30,23 @@ var (
 	createInteractive bool
 )
 
-var dbCreateCmd = &cobra.Command{
+var createCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a new database",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		runDBCreate(args)
+		runCreate(args)
 	},
 }
 
 func init() {
-	dbCreateCmd.Flags().StringVarP(&createProvider, "provider", "p", "", "Database provider (mysql, postgres)")
-	dbCreateCmd.Flags().StringVarP(&createVersion, "version", "v", "", "Database version")
-	dbCreateCmd.Flags().IntVar(&createPort, "port", 0, "Host port")
-	dbCreateCmd.Flags().BoolVarP(&createInteractive, "interactive", "i", false, "Interactive mode")
+	createCmd.Flags().StringVarP(&createProvider, "provider", "p", "", "Database provider (mysql, postgres)")
+	createCmd.Flags().StringVarP(&createVersion, "version", "v", "", "Database version")
+	createCmd.Flags().IntVar(&createPort, "port", 0, "Host port")
+	createCmd.Flags().BoolVarP(&createInteractive, "interactive", "i", false, "Interactive mode")
 }
 
-func runDBCreate(args []string) {
+func runCreate(args []string) {
 	var dbName string
 	var provider string
 	var version string
@@ -65,9 +73,9 @@ func runDBCreate(args []string) {
 			return
 		}
 
-		defaultVersion := "8.0"
-		if provider == "postgres" {
-			defaultVersion = "16"
+		defaultVersion := defaultMySQLVersion
+		if provider == utils.ProviderPostgres {
+			defaultVersion = defaultPostgresVersion
 		}
 
 		if err := survey.AskOne(&survey.Input{
@@ -79,7 +87,7 @@ func runDBCreate(args []string) {
 		}
 
 		defaultPort := 3306
-		if provider == "postgres" {
+		if provider == utils.ProviderPostgres {
 			defaultPort = 5432
 		}
 
@@ -111,7 +119,7 @@ func runDBCreate(args []string) {
 		if createUser {
 			if err := survey.AskOne(&survey.Input{
 				Message: "Username:",
-				Default: "dev_user",
+				Default: defaultUsername,
 			}, &username); err != nil {
 				color.Red("Error: %v", err)
 				return
@@ -136,9 +144,21 @@ func runDBCreate(args []string) {
 			return
 		}
 
-		rootPassword = generatePassword()
-		username = "dev_user"
-		userPassword = generatePassword()
+		// Generate secure passwords
+		var err error
+		rootPassword, err = utils.GeneratePassword(utils.DefaultPasswordLength)
+		if err != nil {
+			color.Red("Error generating password: %v", err)
+			return
+		}
+
+		userPassword, err = utils.GeneratePassword(utils.DefaultPasswordLength)
+		if err != nil {
+			color.Red("Error generating password: %v", err)
+			return
+		}
+
+		username = defaultUsername
 		createUser = true
 	}
 
@@ -157,9 +177,9 @@ func runDBCreate(args []string) {
 	// Get provider
 	var prov providers.Provider
 	switch provider {
-	case "mysql":
+	case utils.ProviderMySQL:
 		prov = providers.NewMySQLProvider()
-	case "postgres":
+	case utils.ProviderPostgres:
 		prov = providers.NewPostgresProvider()
 	default:
 		color.Red("Error: Unsupported provider '%s'", provider)
@@ -224,21 +244,21 @@ func runDBCreate(args []string) {
 
 	// Wait for healthy
 	color.White("⏳ Waiting for database to be ready...")
-	if err := dockerMgr.WaitForHealthy(ctx, containerID, 30*time.Second); err != nil {
+	if err := dockerMgr.WaitForHealthy(ctx, containerID, containerWaitTimeout); err != nil {
 		color.Red("Error: %v", err)
 		dockerMgr.RemoveContainer(ctx, containerID)
 		return
 	}
 
 	// Give it a bit more time to fully initialize
-	time.Sleep(5 * time.Second)
+	time.Sleep(containerInitDelay)
 
 	// Create user if requested
 	if createUser && username != "" {
 		color.White("👤 Creating user '%s'...", username)
 
 		connStr := prov.GetConnectionString(dbConfig)
-		db, err := sql.Open(getDriverName(provider), connStr)
+		db, err := sql.Open(utils.GetDriverName(provider), connStr)
 		if err != nil {
 			color.Yellow("Warning: Could not create user: %v", err)
 		} else {
@@ -284,30 +304,10 @@ func runDBCreate(args []string) {
 		color.Cyan("  Password: %s", userPassword)
 		fmt.Println()
 
-		if provider == "mysql" {
-			color.White("Connection String:")
-			fmt.Printf("  mysql://%s:%s@localhost:%d/%s\n", username, userPassword, port, dbName)
-		} else {
-			color.White("Connection String:")
-			fmt.Printf("  postgres://%s:%s@localhost:%d/%s\n", username, userPassword, port, dbName)
-		}
+		color.White("Connection String:")
+		connStr := utils.BuildConnectionString(provider, username, userPassword, "localhost", port, dbName)
+		fmt.Printf("  %s\n", connStr)
 	}
 
 	fmt.Println()
-}
-
-func generatePassword() string {
-	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	b := make([]byte, 16)
-	for i := range b {
-		b[i] = charset[rand.Intn(len(charset))]
-	}
-	return string(b)
-}
-
-func getDriverName(provider string) string {
-	if provider == "postgres" {
-		return "postgres"
-	}
-	return "mysql"
 }

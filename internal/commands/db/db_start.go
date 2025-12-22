@@ -1,4 +1,4 @@
-package commands
+package db
 
 import (
 	"context"
@@ -9,16 +9,16 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var dbStartCmd = &cobra.Command{
+var startCmd = &cobra.Command{
 	Use:   "start <name>",
 	Short: "Start a database",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
-		runDBStart(args[0])
+		runStart(args[0])
 	},
 }
 
-func runDBStart(name string) {
+func runStart(name string) {
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)
