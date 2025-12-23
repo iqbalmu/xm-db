@@ -9,7 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd is the provider management command
 var Cmd = &cobra.Command{
 	Use:   "provider",
 	Short: "Manage database providers",
@@ -39,7 +38,6 @@ func runList() {
 
 	fmt.Println()
 
-	// New API v1+
 	table := tablewriter.NewTable(os.Stdout)
 	table.Header("Provider", "Default Version", "Default Port", "Status")
 	table.Bulk(data)

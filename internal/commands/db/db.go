@@ -4,7 +4,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// Cmd is the database management command
 var Cmd = &cobra.Command{
 	Use:   "db",
 	Short: "Manage databases",
@@ -17,4 +16,7 @@ func init() {
 	Cmd.AddCommand(stopCmd)
 	Cmd.AddCommand(removeCmd)
 	Cmd.AddCommand(infoCmd)
+	Cmd.AddCommand(logsCmd)
+	Cmd.AddCommand(backupCmd)
+	Cmd.AddCommand(restoreCmd)
 }

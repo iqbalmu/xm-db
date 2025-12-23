@@ -7,16 +7,12 @@ import (
 )
 
 const (
-	// ProviderMySQL represents MySQL database provider
-	ProviderMySQL = "mysql"
-	// ProviderPostgres represents PostgreSQL database provider
+	ProviderMySQL    = "mysql"
 	ProviderPostgres = "postgres"
 
-	// DefaultPasswordLength is the default length for generated passwords
 	DefaultPasswordLength = 16
 )
 
-// GetDriverName returns the database driver name for sql.Open()
 func GetDriverName(provider string) string {
 	if provider == ProviderPostgres {
 		return "postgres"
@@ -24,7 +20,6 @@ func GetDriverName(provider string) string {
 	return "mysql"
 }
 
-// GeneratePassword generates a cryptographically secure random password
 func GeneratePassword(length int) (string, error) {
 	if length <= 0 {
 		length = DefaultPasswordLength
@@ -44,7 +39,6 @@ func GeneratePassword(length int) (string, error) {
 	return string(b), nil
 }
 
-// BuildConnectionString builds a database connection string
 func BuildConnectionString(provider, user, password, host string, port int, dbName string) string {
 	if provider == ProviderPostgres {
 		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",

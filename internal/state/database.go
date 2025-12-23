@@ -4,7 +4,6 @@ import (
 	"time"
 )
 
-// Database represents a managed database instance
 type Database struct {
 	Name          string    `json:"name"`
 	Provider      string    `json:"provider"`
@@ -16,11 +15,11 @@ type Database struct {
 	DatabaseName  string    `json:"database_name"`
 	User          string    `json:"user,omitempty"`
 	UserPassword  string    `json:"user_password,omitempty"`
+	VolumeName    string    `json:"volume_name,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 	Status        string    `json:"status"`
 }
 
-// GetUsername returns the username to use for connections
 func (d *Database) GetUsername() string {
 	if d.User != "" {
 		return d.User
@@ -31,7 +30,6 @@ func (d *Database) GetUsername() string {
 	return "root"
 }
 
-// GetPassword returns the password to use for connections
 func (d *Database) GetPassword() string {
 	if d.UserPassword != "" {
 		return d.UserPassword

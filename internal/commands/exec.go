@@ -9,7 +9,7 @@ import (
 	"github.com/fatih/color"
 	"github.com/iqbalmu/dbm/internal/providers"
 	"github.com/iqbalmu/dbm/internal/state"
-	"github.com/iqbalmu/dbm/pkg/utils" // TAMBAH IMPORT
+	"github.com/iqbalmu/dbm/pkg/utils"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
@@ -149,5 +149,3 @@ func runExec(name string) {
 
 	color.Green("\n%d rows returned\n", len(data))
 }
-
-// HAPUS fungsi getDriverName() yang lama

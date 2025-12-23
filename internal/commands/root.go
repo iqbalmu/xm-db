@@ -29,6 +29,7 @@ func Execute() error {
 func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(statusCmd)
+	rootCmd.AddCommand(configCmd)
 	rootCmd.AddCommand(db.Cmd)
 	rootCmd.AddCommand(provider.Cmd)
 	rootCmd.AddCommand(table.Cmd)

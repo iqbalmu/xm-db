@@ -8,11 +8,8 @@ import (
 )
 
 const (
-	// StateDir is the subdirectory name for database state files
-	StateDir = ".dbm"
-	// DatabasesDir is the subdirectory for database configurations
+	StateDir     = ".dbm"
 	DatabasesDir = "databases"
-	// StateFileExt is the extension for state files
 	StateFileExt = ".json"
 )
 
@@ -27,7 +24,7 @@ func NewManager() (*Manager, error) {
 	}
 
 	stateDir := filepath.Join(homeDir, StateDir, DatabasesDir)
-	if err := os.MkdirAll(stateDir, 0755); err != nil {
+	if err := os.MkdirAll(stateDir, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create state directory: %w", err)
 	}
 
@@ -40,7 +37,7 @@ func (m *Manager) Save(db *Database) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal database state: %w", err)
 	}
-	if err := os.WriteFile(filePath, data, 0644); err != nil {
+	if err := os.WriteFile(filePath, data, 0o644); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 	return nil

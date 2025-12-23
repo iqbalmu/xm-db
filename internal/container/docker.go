@@ -1,6 +1,8 @@
 package container
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -8,14 +10,14 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/image"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
 )
 
 const (
-	// DefaultStopTimeout is the default timeout for stopping containers
-	DefaultStopTimeout = 10
-	// HealthCheckInterval is the interval between health checks
+	DefaultStopTimeout  = 10
 	HealthCheckInterval = 1 * time.Second
 )
 
@@ -64,7 +66,7 @@ func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerCo
 		},
 	}
 
-	// Host config
+	// Host config with volume mounts
 	hostConfig := &container.HostConfig{
 		PortBindings: nat.PortMap{
 			containerPort: []nat.PortBinding{portBinding},
@@ -72,6 +74,17 @@ func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerCo
 		RestartPolicy: container.RestartPolicy{
 			Name: "unless-stopped",
 		},
+	}
+
+	// Add volume mounts if specified
+	if config.VolumeName != "" && config.VolumePath != "" {
+		hostConfig.Mounts = []mount.Mount{
+			{
+				Type:   mount.TypeVolume,
+				Source: config.VolumeName,
+				Target: config.VolumePath,
+			},
+		}
 	}
 
 	// Create container
@@ -137,10 +150,74 @@ func (d *DockerManager) WaitForHealthy(ctx context.Context, containerID string, 
 	}
 }
 
+// GetContainerLogs retrieves logs from a container
+func (d *DockerManager) GetContainerLogs(ctx context.Context, containerID string, tail string, follow bool) (io.ReadCloser, error) {
+	options := container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Follow:     follow,
+		Tail:       tail,
+		Timestamps: true,
+	}
+	return d.client.ContainerLogs(ctx, containerID, options)
+}
+
+// ExecCommand executes a command in a running container
+func (d *DockerManager) ExecCommand(ctx context.Context, containerID string, cmd []string) (string, error) {
+	execConfig := container.ExecOptions{
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+	}
+
+	execID, err := d.client.ContainerExecCreate(ctx, containerID, execConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	resp, err := d.client.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{})
+	if err != nil {
+		return "", fmt.Errorf("failed to attach exec: %w", err)
+	}
+	defer resp.Close()
+
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, resp.Reader); err != nil {
+		return "", fmt.Errorf("failed to read exec output: %w", err)
+	}
+
+	if stderr.Len() > 0 {
+		return "", fmt.Errorf("exec error: %s", stderr.String())
+	}
+
+	return stdout.String(), nil
+}
+
+// StreamLogs streams container logs line by line to a channel
+func (d *DockerManager) StreamLogs(ctx context.Context, containerID string, lines chan<- string) error {
+	logs, err := d.GetContainerLogs(ctx, containerID, "100", true)
+	if err != nil {
+		return err
+	}
+	defer logs.Close()
+
+	scanner := bufio.NewScanner(logs)
+	for scanner.Scan() {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case lines <- scanner.Text():
+		}
+	}
+	return scanner.Err()
+}
+
 type ContainerConfig struct {
 	Name          string
 	Image         string
 	Port          int
 	ContainerPort string
 	Env           []string
+	VolumeName    string
+	VolumePath    string
 }

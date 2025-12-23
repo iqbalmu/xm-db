@@ -70,7 +70,6 @@ func runStatus() {
 
 	fmt.Println()
 
-	// New API v1+
 	table := tablewriter.NewTable(os.Stdout)
 	table.Header("Name", "Provider", "Status", "Port", "Created")
 	table.Bulk(data)

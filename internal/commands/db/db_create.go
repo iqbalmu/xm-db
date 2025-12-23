@@ -28,6 +28,7 @@ var (
 	createVersion     string
 	createPort        int
 	createInteractive bool
+	createWithVolume  bool
 )
 
 var createCmd = &cobra.Command{
@@ -44,6 +45,7 @@ func init() {
 	createCmd.Flags().StringVarP(&createVersion, "version", "v", "", "Database version")
 	createCmd.Flags().IntVar(&createPort, "port", 0, "Host port")
 	createCmd.Flags().BoolVarP(&createInteractive, "interactive", "i", false, "Interactive mode")
+	createCmd.Flags().BoolVar(&createWithVolume, "volume", true, "Create with persistent volume (default: true)")
 }
 
 func runCreate(args []string) {
@@ -210,6 +212,18 @@ func runCreate(args []string) {
 
 	// Create container
 	containerName := fmt.Sprintf("dbm_%s", dbName)
+	volumeName := fmt.Sprintf("dbm_%s_data", dbName)
+
+	// Determine volume path based on provider
+	var volumePath string
+	if createWithVolume {
+		if provider == utils.ProviderMySQL {
+			volumePath = "/var/lib/mysql"
+		} else {
+			volumePath = "/var/lib/postgresql/data"
+		}
+	}
+
 	dbConfig := &providers.DBConfig{
 		Host:         "localhost",
 		Port:         port,
@@ -225,6 +239,8 @@ func runCreate(args []string) {
 		Port:          port,
 		ContainerPort: prov.GetContainerPort(),
 		Env:           prov.GetEnvVars(dbConfig),
+		VolumeName:    volumeName,
+		VolumePath:    volumePath,
 	}
 
 	color.White("🐳 Creating container...")
@@ -282,6 +298,7 @@ func runCreate(args []string) {
 		DatabaseName:  dbName,
 		User:          username,
 		UserPassword:  userPassword,
+		VolumeName:    volumeName,
 		CreatedAt:     time.Now(),
 		Status:        "running",
 	}
