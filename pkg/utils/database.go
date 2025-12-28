@@ -44,6 +44,6 @@ func BuildConnectionString(provider, user, password, host string, port int, dbNa
 		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
 			user, password, host, port, dbName)
 	}
-	return fmt.Sprintf("mysql://%s:%s@%s:%d/%s",
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
 		user, password, host, port, dbName)
 }

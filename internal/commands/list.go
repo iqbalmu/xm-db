@@ -1,4 +1,4 @@
-package db
+package commands
 
 import (
 	"context"
@@ -36,7 +36,7 @@ func runList() {
 
 	if len(databases) == 0 {
 		color.Yellow("\nNo databases found.")
-		fmt.Println("Create one with: dbm db create <name> --provider <mysql|postgres>")
+		fmt.Println("Create one with: dbm create <name> --provider <mysql|postgres>")
 		fmt.Println()
 		return
 	}

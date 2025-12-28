@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/dbm/internal/commands/db"
 	"github.com/iqbalmu/dbm/internal/commands/provider"
 	"github.com/iqbalmu/dbm/internal/commands/table"
 	"github.com/spf13/cobra"
@@ -30,7 +29,15 @@ func init() {
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(configCmd)
-	rootCmd.AddCommand(db.Cmd)
+	rootCmd.AddCommand(createCmd)
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(startCmd)
+	rootCmd.AddCommand(stopCmd)
+	rootCmd.AddCommand(removeCmd)
+	rootCmd.AddCommand(infoCmd)
+	rootCmd.AddCommand(logsCmd)
+	rootCmd.AddCommand(backupCmd)
+	rootCmd.AddCommand(restoreCmd)
 	rootCmd.AddCommand(provider.Cmd)
 	rootCmd.AddCommand(table.Cmd)
 	rootCmd.AddCommand(execCmd)
@@ -59,23 +66,23 @@ func showOverview() {
 	commandColor.Print("  dbm provider list")
 	fmt.Println("         List available database providers")
 
-	commandColor.Print("  dbm db create <name>")
-	fmt.Println("      Create a new database")
+	commandColor.Print("  dbm create <name>")
+	fmt.Println("           Create a new database")
 
-	commandColor.Print("  dbm db list")
-	fmt.Println("              List all managed databases")
+	commandColor.Print("  dbm list")
+	fmt.Println("                  List all managed databases")
 
-	commandColor.Print("  dbm db start <name>")
-	fmt.Println("      Start a database")
+	commandColor.Print("  dbm start <name>")
+	fmt.Println("           Start a database")
 
-	commandColor.Print("  dbm db stop <name>")
-	fmt.Println("       Stop a database")
+	commandColor.Print("  dbm stop <name>")
+	fmt.Println("            Stop a database")
 
 	commandColor.Print("  dbm connect <name>")
-	fmt.Println("        Show connection information")
+	fmt.Println("          Show connection information")
 
 	fmt.Println("\n💡 Quick Start:")
-	fmt.Println("  1. dbm db create mydb --provider mysql")
+	fmt.Println("  1. dbm create mydb --provider mysql")
 	fmt.Println("  2. dbm connect mydb")
 	fmt.Println("  3. dbm table list mydb")
 
