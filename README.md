@@ -45,6 +45,22 @@ container ID.
 Requires a Docker-compatible daemon (Docker, Podman with the `docker` alias,
 etc.).
 
+### One-liner (curl)
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/iqbalmu/dbm/main/install.sh | sh
+```
+
+Detects your OS/arch, downloads the matching release binary, verifies its
+sha256 checksum, and installs it. Defaults to `/usr/local/bin` (falls back to
+`~/.local/bin` without sudo access); both are overridable:
+
+```sh
+DBM_INSTALL_DIR=~/.local/bin VERSION=v1.0.0 sh install.sh
+```
+
+Re-running the installer upgrades to the latest release.
+
 ### Prebuilt binaries
 
 Grab a binary for your platform from
