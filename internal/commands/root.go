@@ -61,7 +61,7 @@ func showOverview() {
 	subtitleColor.Println("\nManage your development databases with ease!")
 	subtitleColor.Println("Supports: MySQL, PostgreSQL")
 
-	fmt.Println("\n📦 Common Commands:")
+	fmt.Println("\nCommon Commands:")
 	commandColor.Print("  xmdb version")
 	fmt.Println("              Show version information")
 
@@ -86,11 +86,11 @@ func showOverview() {
 	commandColor.Print("  xmdb connect <name>")
 	fmt.Println("          Show connection information")
 
-	fmt.Println("\n💡 Quick Start:")
+	fmt.Println("\nQuick Start:")
 	fmt.Println("  1. xmdb create mydb --provider mysql")
 	fmt.Println("  2. xmdb connect mydb")
 	fmt.Println("  3. xmdb table list mydb")
 
-	fmt.Println("\n📖 For more information, run: xmdb --help")
+	fmt.Println("\nFor more information, run: xmdb --help")
 	fmt.Println()
 }

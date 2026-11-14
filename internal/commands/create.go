@@ -162,7 +162,6 @@ func runCreate(args []string) {
 			}
 		}
 	} else {
-		// Non-interactive mode
 		dbName = args[0]
 		provider = createProvider
 		version = createVersion
@@ -173,7 +172,6 @@ func runCreate(args []string) {
 			return
 		}
 
-		// Generate secure passwords
 		var err error
 		rootPassword, err = utils.GeneratePassword(utils.DefaultPasswordLength)
 		if err != nil {
@@ -198,7 +196,6 @@ func runCreate(args []string) {
 		}
 	}
 
-	// Validate
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)
@@ -210,7 +207,6 @@ func runCreate(args []string) {
 		return
 	}
 
-	// Get provider
 	prov, err := providers.For(provider)
 	if err != nil {
 		color.Red("Error: %v", err)
@@ -231,7 +227,6 @@ func runCreate(args []string) {
 		return
 	}
 
-	// Create database instance
 	color.Cyan("\n⏳ Creating %s database '%s'...\n", provider, dbName)
 
 	ctx := context.Background()
@@ -241,7 +236,6 @@ func runCreate(args []string) {
 		return
 	}
 
-	// Pull image
 	imageName := prov.GetImageName(version)
 	color.White("📥 Pulling image %s...", imageName)
 	if err := dockerMgr.PullImage(ctx, imageName); err != nil {
@@ -249,7 +243,6 @@ func runCreate(args []string) {
 		return
 	}
 
-	// Create container
 	containerName := fmt.Sprintf("xmdb_%s", dbName)
 	volumeName := ""
 	var volumePath string
@@ -302,7 +295,6 @@ func runCreate(args []string) {
 		return
 	}
 
-	// Start container
 	color.White("▶️  Starting container...")
 	if err := dockerMgr.StartContainer(ctx, containerID); err != nil {
 		color.Red("Error starting container: %v", err)
@@ -341,7 +333,6 @@ func runCreate(args []string) {
 		db.Close()
 	}
 
-	// Save state
 	dbState := &state.Database{
 		Name:          dbName,
 		Provider:      provider,
@@ -364,7 +355,6 @@ func runCreate(args []string) {
 		return
 	}
 
-	// Success message
 	color.Green("\n✓ Database '%s' created successfully!\n", dbName)
 
 	fmt.Println("Connection Information:")

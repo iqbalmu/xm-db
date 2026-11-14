@@ -39,7 +39,6 @@ func runStop(name string) {
 
 	ctx := context.Background()
 
-	// Check if already stopped
 	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
 	if err == nil && !running {
 		color.Yellow("Database '%s' is already stopped", name)

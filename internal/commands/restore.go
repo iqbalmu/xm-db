@@ -50,14 +50,12 @@ func runRestore(name, backupFile string) {
 
 	ctx := context.Background()
 
-	// Check if container is running
 	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
 	if err != nil || !running {
 		color.Red("Error: Database '%s' is not running", name)
 		return
 	}
 
-	// Check if backup file exists
 	absPath, err := filepath.Abs(backupFile)
 	if err != nil {
 		color.Red("Error: Invalid backup file path: %v", err)
@@ -69,7 +67,6 @@ func runRestore(name, backupFile string) {
 		return
 	}
 
-	// Confirmation
 	if !restoreForce {
 		var confirm bool
 		prompt := &survey.Confirm{
@@ -85,7 +82,6 @@ func runRestore(name, backupFile string) {
 		}
 	}
 
-	// Read backup file
 	sqlData, err := os.ReadFile(absPath)
 	if err != nil {
 		color.Red("Error reading backup file: %v", err)

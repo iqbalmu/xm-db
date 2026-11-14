@@ -43,7 +43,6 @@ func runRemove(name string) {
 		return
 	}
 
-	// Confirmation
 	if !removeForce {
 		var confirm bool
 		prompt := &survey.Confirm{
@@ -69,14 +68,12 @@ func runRemove(name string) {
 
 	color.Cyan("🗑️  Removing database '%s'...", name)
 
-	// Stop container if running
 	running, _ := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
 	if running {
 		color.White("  Stopping container...")
 		dockerMgr.StopContainer(ctx, db.ContainerID)
 	}
 
-	// Remove container
 	color.White("  Removing container...")
 	if err := dockerMgr.RemoveContainer(ctx, db.ContainerID); err != nil {
 		color.Yellow("  Warning: Could not remove container: %v", err)
@@ -95,7 +92,6 @@ func runRemove(name string) {
 		}
 	}
 
-	// Remove state
 	if err := stateMgr.Delete(name); err != nil {
 		color.Red("Error removing state: %v", err)
 		return

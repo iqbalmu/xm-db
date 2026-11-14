@@ -39,7 +39,6 @@ func runStart(name string) {
 
 	ctx := context.Background()
 
-	// Check if already running
 	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
 	if err != nil {
 		color.Red("Error checking container status: %v", err)

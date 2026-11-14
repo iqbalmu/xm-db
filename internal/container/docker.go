@@ -34,8 +34,8 @@ type endpoint struct {
 }
 
 // candidateEndpoints lists daemon addresses in probe order for the selected
-// runtime: "auto", "docker" or "podman". A set DOCKER_HOST always wins — it is
-// the standard override.
+// runtime: "auto", "docker" or "podman". A set DOCKER_HOST always wins (the
+// standard override).
 func candidateEndpoints(runtime string) []endpoint {
 	if host := os.Getenv("DOCKER_HOST"); host != "" {
 		return []endpoint{{"DOCKER_HOST", host}}
@@ -57,8 +57,8 @@ func candidateEndpoints(runtime string) []endpoint {
 	return out
 }
 
-// NewDockerManager connects to a Docker-compatible daemon — Docker, Podman, or
-// anything speaking the same API — probing candidates until one answers.
+// NewDockerManager connects to a Docker-compatible daemon (Docker, Podman, or
+// anything speaking the same API), probing candidates until one answers.
 func NewDockerManager(runtime string) (*DockerManager, error) {
 	var tried []string
 	for _, ep := range candidateEndpoints(runtime) {
@@ -85,7 +85,7 @@ func NewDockerManager(runtime string) (*DockerManager, error) {
 	}
 
 	return nil, fmt.Errorf(
-		"no Docker-compatible daemon reachable (tried: %s) — start Docker, or for rootless podman: systemctl --user start podman.socket",
+		"no Docker-compatible daemon reachable (tried: %s). Start Docker, or for rootless podman: systemctl --user start podman.socket",
 		strings.Join(tried, "; "),
 	)
 }
@@ -97,14 +97,13 @@ func (d *DockerManager) PullImage(ctx context.Context, imageName string) error {
 	}
 	defer reader.Close()
 
-	// Read the output to ensure pull completes
+	// Read the output so the pull completes before returning.
 	_, err = io.Copy(io.Discard, reader)
 	return err
 }
 
 func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerConfig) (string, error) {
-	// Port binding — loopback only: dev databases must not be reachable from
-	// other machines.
+	// Loopback only: dev databases must not be reachable from other machines.
 	portBinding := nat.PortBinding{
 		HostIP:   "127.0.0.1",
 		HostPort: fmt.Sprintf("%d", config.Port),
@@ -115,7 +114,6 @@ func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerCo
 		return "", err
 	}
 
-	// Container config
 	containerConfig := &container.Config{
 		Image: config.Image,
 		Env:   config.Env,
@@ -124,7 +122,6 @@ func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerCo
 		},
 	}
 
-	// Host config with volume mounts
 	hostConfig := &container.HostConfig{
 		PortBindings: nat.PortMap{
 			containerPort: []nat.PortBinding{portBinding},
@@ -134,7 +131,6 @@ func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerCo
 		},
 	}
 
-	// Add volume mounts if specified
 	if config.VolumeName != "" && config.VolumePath != "" {
 		hostConfig.Mounts = []mount.Mount{
 			{
@@ -145,7 +141,6 @@ func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerCo
 		}
 	}
 
-	// Create container
 	resp, err := d.client.ContainerCreate(
 		ctx,
 		containerConfig,

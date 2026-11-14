@@ -35,14 +35,12 @@ func runList(name string) {
 		return
 	}
 
-	// Get provider
 	prov, err := providers.For(dbState.Provider)
 	if err != nil {
 		color.Red("Error: %v", err)
 		return
 	}
 
-	// Connect to database
 	dbConfig := &providers.DBConfig{
 		Host:         "localhost",
 		Port:         dbState.Port,
@@ -60,7 +58,6 @@ func runList(name string) {
 
 	ctx := context.Background()
 
-	// List tables
 	tables, err := prov.ListTables(ctx, db, dbState.DatabaseName)
 	if err != nil {
 		color.Red("Error listing tables: %v", err)

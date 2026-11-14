@@ -13,79 +13,110 @@ type wizardAction struct {
 	run   func()
 }
 
-// runWizard is the interactive menu shown by `xmdb` with no arguments. Each
-// action runs, then the menu redraws until the user exits.
+// runWizard is the interactive menu shown by `xmdb` with no arguments.
 func runWizard() {
-	actions := []wizardAction{
-		{label: "📊  Show status of all databases", run: func() { runStatus() }},
-		{label: "📋  List all databases", run: func() { runList() }},
-		{label: "➕  Create a new database", run: func() { runCreate(nil) }},
-		{label: "▶️   Start a database", run: func() {
-			if name := pickDatabase("Start which database?"); name != "" {
-				runStart(name)
-			}
-		}},
-		{label: "⏸️  Stop a database", run: func() {
-			if name := pickDatabase("Stop which database?"); name != "" {
-				runStop(name)
-			}
-		}},
-		{label: "🗑️  Remove a database", run: func() {
-			if name := pickDatabase("Remove which database?"); name != "" {
-				runRemove(name)
-			}
-		}},
-		{label: "🔗  Show connection info", run: func() {
-			if name := pickDatabase("Show info for which database?"); name != "" {
-				runConnect(name)
-			}
-		}},
-		{label: "📄  View database logs", run: func() {
-			if name := pickDatabase("Show logs of which database?"); name != "" {
-				runLogs(name)
-			}
-		}},
-		{label: "💾  Backup a database", run: func() {
-			if name := pickDatabase("Backup which database?"); name != "" {
-				runBackup(name)
-			}
-		}},
-		{label: "❓  Show command overview", run: func() { showOverview() }},
-		{label: "🚪  Exit", run: nil},
+	groups := []wizardGroup{
+		{
+			label: "Databases",
+			actions: []wizardAction{
+				{label: "Create a new database", run: func() { runCreate(nil) }},
+				{label: "List all databases", run: func() { runList() }},
+				{label: "Show status of all databases", run: func() { runStatus() }},
+				{label: "Start a database", run: pickAndRun("Start which database?", runStart)},
+				{label: "Stop a database", run: pickAndRun("Stop which database?", runStop)},
+				{label: "Remove a database", run: pickAndRun("Remove which database?", runRemove)},
+			},
+		},
+		{
+			label: "Connect & maintenance",
+			actions: []wizardAction{
+				{label: "Show connection info", run: pickAndRun("Show info for which database?", runConnect)},
+				{label: "View database logs", run: pickAndRun("Show logs of which database?", runLogs)},
+				{label: "Backup a database", run: pickAndRun("Backup which database?", runBackup)},
+			},
+		},
 	}
 
-	labels := make([]string, len(actions))
-	for i, a := range actions {
-		labels[i] = a.label
+	topOptions := make([]string, 0, len(groups)+2)
+	for _, g := range groups {
+		topOptions = append(topOptions, g.label)
 	}
+	topOptions = append(topOptions, "Command overview", "Exit")
 
 	for {
-		var choice string
-		prompt := &survey.Select{
-			Message: "What do you want to do?",
-			Options: labels,
-		}
-		if err := survey.AskOne(prompt, &choice); err != nil {
-			// Ctrl+C or EOF — leave quietly.
+		choice, ok := promptSelect("What do you want to do?", topOptions)
+		if !ok || choice == "Exit" {
 			fmt.Println()
 			return
 		}
 
-		for _, a := range actions {
-			if a.label == choice {
-				if a.run == nil {
-					return
-				}
-				a.run()
+		if choice == "Command overview" {
+			showOverview()
+			waitForEnter()
+			continue
+		}
+
+		for _, g := range groups {
+			if g.label == choice {
+				runGroupMenu(g)
 				break
 			}
 		}
-
-		// Let the user read the action's output before the menu redraws.
-		fmt.Println()
-		cont := ""
-		_ = survey.AskOne(&survey.Input{Message: "Press Enter to return to the menu…"}, &cont)
 	}
+}
+
+type wizardGroup struct {
+	label   string
+	actions []wizardAction
+}
+
+func runGroupMenu(group wizardGroup) {
+	options := make([]string, 0, len(group.actions)+1)
+	for _, a := range group.actions {
+		options = append(options, a.label)
+	}
+	options = append(options, "Back")
+
+	for {
+		choice, ok := promptSelect(group.label, options)
+		if !ok || choice == "Back" {
+			return
+		}
+
+		for _, a := range group.actions {
+			if a.label == choice {
+				a.run()
+				waitForEnter()
+				break
+			}
+		}
+	}
+}
+
+func pickAndRun(question string, fn func(string)) func() {
+	return func() {
+		if name := pickDatabase(question); name != "" {
+			fn(name)
+		}
+	}
+}
+
+func promptSelect(message string, options []string) (string, bool) {
+	var choice string
+	prompt := &survey.Select{
+		Message: message,
+		Options: options,
+	}
+	if err := survey.AskOne(prompt, &choice); err != nil {
+		return "", false
+	}
+	return choice, true
+}
+
+func waitForEnter() {
+	fmt.Println()
+	cont := ""
+	_ = survey.AskOne(&survey.Input{Message: "Press Enter to return to the menu..."}, &cont)
 }
 
 // pickDatabase shows a selector over the managed databases and returns the
@@ -103,7 +134,7 @@ func pickDatabase(question string) string {
 		return ""
 	}
 	if len(dbs) == 0 {
-		color.Yellow("\nNo databases yet — pick 'Create a new database' first.")
+		color.Yellow("\nNo databases yet. Pick 'Create a new database' first.")
 		return ""
 	}
 
@@ -112,9 +143,8 @@ func pickDatabase(question string) string {
 		options[i] = fmt.Sprintf("%s (%s, %s)", d.Name, d.Provider, groupLabel(d.Group))
 	}
 
-	var choice string
-	prompt := &survey.Select{Message: question, Options: options}
-	if err := survey.AskOne(prompt, &choice); err != nil {
+	choice, ok := promptSelect(question, options)
+	if !ok {
 		return ""
 	}
 

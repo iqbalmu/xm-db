@@ -61,7 +61,6 @@ func runStatus() {
 
 	ctx := context.Background()
 
-	// Prepare data
 	var data [][]any
 	for _, db := range databases {
 		status := "stopped"

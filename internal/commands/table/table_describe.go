@@ -37,14 +37,12 @@ func runDescribe(dbName, tableName string) {
 		return
 	}
 
-	// Get provider
 	prov, err := providers.For(dbState.Provider)
 	if err != nil {
 		color.Red("Error: %v", err)
 		return
 	}
 
-	// Connect to database
 	dbConfig := &providers.DBConfig{
 		Host:         "localhost",
 		Port:         dbState.Port,
@@ -62,7 +60,6 @@ func runDescribe(dbName, tableName string) {
 
 	ctx := context.Background()
 
-	// Describe table
 	var rows *sql.Rows
 	if dbState.Provider == utils.ProviderMySQL {
 		rows, err = db.QueryContext(ctx, fmt.Sprintf("DESCRIBE %s", providers.QuoteIdentMySQL(tableName)))

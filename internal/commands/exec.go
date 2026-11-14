@@ -51,14 +51,12 @@ func runExec(name string) {
 		return
 	}
 
-	// Get provider
 	prov, err := providers.For(dbState.Provider)
 	if err != nil {
 		color.Red("Error: %v", err)
 		return
 	}
 
-	// Connect to database
 	dbConfig := &providers.DBConfig{
 		Host:         "localhost",
 		Port:         dbState.Port,
@@ -76,7 +74,6 @@ func runExec(name string) {
 
 	ctx := context.Background()
 
-	// Get SQL to execute
 	sqlQuery := execSQL
 	if execFile != "" {
 		content, err := os.ReadFile(execFile)
@@ -87,7 +84,6 @@ func runExec(name string) {
 		sqlQuery = string(content)
 	}
 
-	// Execute query
 	rows, err := db.QueryContext(ctx, sqlQuery)
 	if err != nil {
 		// Try as exec (for INSERT, UPDATE, DELETE, etc.)
@@ -104,14 +100,12 @@ func runExec(name string) {
 	}
 	defer rows.Close()
 
-	// Get column names
 	columns, err := rows.Columns()
 	if err != nil {
 		color.Red("Error getting columns: %v", err)
 		return
 	}
 
-	// Read rows into data
 	values := make([]interface{}, len(columns))
 	valuePtrs := make([]interface{}, len(columns))
 	for i := range values {

@@ -67,7 +67,6 @@ func runList() {
 
 	color.Cyan("\n📊 Managed Databases:\n")
 
-	// Prepare data
 	var data [][]any
 	for _, db := range databases {
 		status := "stopped"

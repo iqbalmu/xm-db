@@ -1,5 +1,5 @@
 #!/bin/sh
-# xm-db installer — installs the latest release binary from GitHub.
+# xm-db installer: installs the latest release binary from GitHub.
 #
 #   curl -fsSL https://raw.githubusercontent.com/iqbalmu/xm-db/main/install.sh | sh
 #

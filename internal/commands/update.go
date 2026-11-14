@@ -261,7 +261,7 @@ func runUpdate() {
 		return
 	}
 	if got != want {
-		color.Red("Checksum mismatch (want %s, got %s) — aborting.", want, got)
+		color.Red("Checksum mismatch (want %s, got %s), aborting.", want, got)
 		return
 	}
 
@@ -279,8 +279,7 @@ func runUpdate() {
 	staged := filepath.Join(filepath.Dir(execPath), ".xmdb-new")
 	_ = os.Remove(staged)
 	if err := os.Rename(binaryPath, staged); err != nil {
-		// Cross-device rename (binary on another filesystem than the extract
-		// dir cannot happen — both live next to the binary) — surface it.
+		// Both paths live next to the binary, so cross-device rename cannot happen.
 		color.Red("Error staging the new binary: %v", err)
 		return
 	}
@@ -303,7 +302,7 @@ func runUpdate() {
 	} else {
 		if err := os.Rename(staged, execPath); err != nil {
 			if os.IsPermission(err) {
-				color.Red("Permission denied replacing %s — rerun the installer with elevated rights (sudo sh -c 'curl -fsSL <installer> | sh').", execPath)
+				color.Red("Permission denied replacing %s. Rerun the installer with elevated rights (sudo sh -c 'curl -fsSL <installer> | sh').", execPath)
 				return
 			}
 			color.Red("Error installing the new binary: %v", err)

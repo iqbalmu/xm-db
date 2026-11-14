@@ -50,20 +50,17 @@ func runBackup(name string) {
 
 	ctx := context.Background()
 
-	// Check if container is running
 	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
 	if err != nil || !running {
 		color.Red("Error: Database '%s' is not running", name)
 		return
 	}
 
-	// Generate output filename if not provided
 	if backupOutput == "" {
 		timestamp := time.Now().Format("20060102_150405")
 		backupOutput = fmt.Sprintf("backup_%s_%s.sql", name, timestamp)
 	}
 
-	// Make path absolute
 	absPath, err := filepath.Abs(backupOutput)
 	if err != nil {
 		color.Red("Error: Invalid output path: %v", err)
@@ -101,13 +98,12 @@ func runBackup(name string) {
 		color.Yellow("Warnings:\n%s", res.Stderr)
 	}
 
-	// Write to file — owner-only, the dump contains database data.
+	// Owner-only: the dump contains database data.
 	if err := os.WriteFile(absPath, []byte(res.Stdout), 0o600); err != nil {
 		color.Red("Error writing backup file: %v", err)
 		return
 	}
 
-	// Get file size
 	fileInfo, _ := os.Stat(absPath)
 	size := float64(fileInfo.Size()) / 1024 / 1024 // MB
 

@@ -1,4 +1,4 @@
-# xm-db — Database Management CLI
+# xm-db: Database Management CLI
 
 A CLI for managing throwaway development databases as Docker containers.
 Supports MySQL and PostgreSQL with a single consistent interface.
@@ -20,25 +20,24 @@ container ID.
 
 ## Features
 
-- **Interactive wizard** — run `xmdb` with no arguments for a menu: pick an
-  action, pick a database, done. Every action returns to the menu until you
-  exit.
-- **One-command create** — pulls the image, creates a named volume, starts the
+- Interactive wizard: run `xmdb` with no arguments for a menu to pick an
+  action and a database. Every action returns to the menu until you exit.
+- One-command create: pulls the image, creates a named volume, starts the
   container, waits for real protocol-level readiness, and provisions a dev user.
-- **MySQL and PostgreSQL** — provider abstraction handles engine differences
+- MySQL and PostgreSQL: provider abstraction handles engine differences
   (images, ports, env vars, user grants, connection strings).
-- **Interactive or scripted** — run `xmdb create` with no arguments for guided
+- Interactive or scripted: run `xmdb create` with no arguments for guided
   setup, or pass flags for automation. Passwords are generated with `crypto/rand`.
-- **Lifecycle by name** — `start`, `stop`, `remove`, `logs`, `status`.
-- **Groups** — organize databases per project or organization. A database is
+- Lifecycle by name: `start`, `stop`, `remove`, `logs`, `status`.
+- Groups: organize databases per project or organization. A database is
   `global` by default; assign one at creation with `-g work`, then filter
   views with `xmdb list -g work`.
-- **SQL access** — `xmdb exec --sql "..."` with table output, plus
-  `xmdb table list` / `xmdb table describe`.
-- **Backup and restore** — `mysqldump`/`pg_dump` runs inside the container; the
+- SQL access: `xmdb exec --sql "..."` with table output, plus
+  `xmdb table list` and `xmdb table describe`.
+- Backup and restore: `mysqldump`/`pg_dump` runs inside the container, and the
   dump is written to a local file. Restore streams the file through stdin, so
   large dumps work.
-- **Connection strings** — `xmdb connect <name> [--format string|json|env]`.
+- Connection strings: `xmdb connect <name> [--format string|json|env]`.
 
 ## Installation
 
@@ -78,7 +77,7 @@ sudo install ./xmdb /usr/local/bin/
 go install github.com/iqbalmu/xm-db/cmd/xmdb@latest
 ```
 
-The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`) — make sure
+The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`), so make sure
 that directory is on your `PATH`.
 
 ### From source
@@ -146,25 +145,25 @@ xmdb restore appdb ./dump.sql
 
 ## Design notes
 
-- **Works with Docker and Podman** — on every connect `xmdb` probes candidate
-  daemons in order: `$DOCKER_HOST` (the standard override, always wins),
-  `/var/run/docker.sock`, then the rootless and rootful Podman sockets. The
-  first one that answers wins; pin a side with `--runtime docker|podman`.
-- **State**: one JSON file per database in `~/.xmdb/databases/`, written with
+- Works with Docker and Podman: on every connect `xmdb` probes candidate
+  daemons in order (`$DOCKER_HOST`, `/var/run/docker.sock`, then the rootless
+  and rootful Podman sockets). The first one that answers wins; pin a side with
+  `--runtime docker|podman`.
+- State: one JSON file per database in `~/.xmdb/databases/`, written with
   `0600` permissions (credentials included).
-- **Ports bind to `127.0.0.1` only** — your dev database is not reachable from
+- Ports bind to `127.0.0.1` only, so your dev database is not reachable from
   the network. Create refuses ports already used by another managed database or
   any local process.
-- **Named volumes** (`dbm_<name>_data`) survive container restarts; `xmdb remove`
+- Named volumes (`dbm_<name>_data`) survive container restarts; `xmdb remove`
   deletes them unless `--keep-data` is passed. Creating a database with the same
   name as an existing volume reuses it (you'll see a warning).
-- **Readiness**: `xmdb create` waits until the server completes a real protocol
-  handshake before provisioning users — no fixed sleeps, so it works on slow
+- Readiness: `xmdb create` waits until the server completes a real protocol
+  handshake before provisioning users (no fixed sleeps), so it works on slow
   machines and rootless container runtimes alike.
-- **User provisioning**: the dev user (`dev_user`) gets full privileges on its
+- User provisioning: the dev user (`dev_user`) gets full privileges on its
   database. On PostgreSQL 15+ the user is made database owner, which restores
   `CREATE` on schema `public` (revoked for non-owners since PG15).
-- **SQL identifiers and literals** supplied by users are escaped before being
+- SQL identifiers and literals supplied by users are escaped before being
   interpolated into DDL.
 
 ## Development
