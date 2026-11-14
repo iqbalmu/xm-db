@@ -17,7 +17,7 @@ var rootCmd = &cobra.Command{
 	Long: `DBM is a powerful CLI tool for managing development databases.
 It supports MySQL and PostgreSQL with easy container management.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		showOverview()
+		runWizard()
 	},
 }
 

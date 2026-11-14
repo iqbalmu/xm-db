@@ -20,6 +20,9 @@ container ID.
 
 ## Features
 
+- **Interactive wizard** — run `dbm` with no arguments for a menu: pick an
+  action, pick a database, done. Every action returns to the menu until you
+  exit.
 - **One-command create** — pulls the image, creates a named volume, starts the
   container, waits for real protocol-level readiness, and provisions a dev user.
 - **MySQL and PostgreSQL** — provider abstraction handles engine differences
@@ -82,6 +85,7 @@ dbm restore appdb ./dump.sql
 
 | Command | Description |
 |---|---|
+| `dbm` | Interactive wizard menu: pick an action, pick a database |
 | `dbm create [name] [-p provider] [-v version] [--port N] [-g group] [-i] [--volume=true]` | Create a database (interactive when no name given); `-g` assigns a group, default is global |
 | `dbm list [-g group\|global]` | List all managed databases, optionally filtered by group |
 | `dbm status [-g group\|global]` | Live status of all containers, optionally filtered by group |
