@@ -57,3 +57,11 @@ tidy:
 deps:
 	go mod download
 
+# Test a release build locally (no upload; requires goreleaser)
+release-snapshot:
+	goreleaser release --snapshot --clean
+
+# Check the release configuration
+release-check:
+	goreleaser check
+

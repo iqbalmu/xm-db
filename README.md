@@ -42,8 +42,32 @@ container ID.
 
 ## Installation
 
-Requires Go 1.25+ and a running Docker-compatible daemon (Docker, Podman with
-the `docker` alias, etc.).
+Requires a Docker-compatible daemon (Docker, Podman with the `docker` alias,
+etc.).
+
+### Prebuilt binaries
+
+Grab a binary for your platform from
+[GitHub Releases](https://github.com/iqbalmu/dbm/releases), unpack it, and put
+`dbm` somewhere in your `PATH`:
+
+```sh
+tar -xzf dbm_*_linux_amd64.tar.gz
+sudo install ./dbm /usr/local/bin/
+```
+
+### go install
+
+```sh
+go install github.com/iqbalmu/dbm/cmd/dbm@latest
+```
+
+The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`) — make sure
+that directory is on your `PATH`.
+
+### From source
+
+Requires Go 1.25+:
 
 ```sh
 git clone https://github.com/iqbalmu/dbm
@@ -129,6 +153,22 @@ make build    # build to bin/
 make test     # go test ./...
 make fmt      # go fmt
 go vet ./...
+```
+
+### Releasing
+
+Releases are cut by pushing a semver tag; GitHub Actions builds binaries for
+linux/darwin/windows (amd64 + arm64) and publishes them to GitHub Releases.
+
+```sh
+git tag -a v1.0.1 -m "v1.0.1"
+git push origin v1.0.1
+```
+
+Test a release build locally without uploading:
+
+```sh
+make release-snapshot
 ```
 
 ## License
