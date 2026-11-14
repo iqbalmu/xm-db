@@ -46,6 +46,7 @@ func init() {
 	rootCmd.AddCommand(table.Cmd)
 	rootCmd.AddCommand(execCmd)
 	rootCmd.AddCommand(connectCmd)
+	rootCmd.AddCommand(updateCmd)
 }
 
 func showOverview() {

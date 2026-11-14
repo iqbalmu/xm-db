@@ -59,7 +59,7 @@ sha256 checksum, and installs it. Defaults to `/usr/local/bin` (falls back to
 XMDB_INSTALL_DIR=~/.local/bin VERSION=v1.0.0 sh install.sh
 ```
 
-Re-running the installer upgrades to the latest release.
+Re-running the installer (or running `xmdb update`) upgrades to the latest release.
 
 ### Prebuilt binaries
 
@@ -141,6 +141,7 @@ xmdb restore appdb ./dump.sql
 | `xmdb table list <name>` / `xmdb table describe <name> <table>` | Inspect tables |
 | `xmdb provider list` | Show supported providers and defaults |
 | `xmdb config init/show/path` | Manage `~/.xmdb/config.yaml` |
+| `xmdb update` | Update `xmdb` to the latest release |
 | `xmdb version` | Version information |
 
 ## Design notes
