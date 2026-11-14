@@ -1,16 +1,16 @@
 #!/bin/sh
-# dbm installer — installs the latest release binary from GitHub.
+# xm-db installer — installs the latest release binary from GitHub.
 #
-#   curl -fsSL https://raw.githubusercontent.com/iqbalmu/dbm/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/iqbalmu/xm-db/main/install.sh | sh
 #
 # Environment overrides:
-#   DBM_INSTALL_DIR  target directory (default: /usr/local/bin, falls back to
+#   XMDB_INSTALL_DIR  target directory (default: /usr/local/bin, falls back to
 #                    ~/.local/bin when it is not writable)
 #   VERSION          pin a release tag (default: latest, e.g. VERSION=v1.0.0)
 
 set -eu
 
-REPO="iqbalmu/dbm"
+REPO="iqbalmu/xm-db"
 
 msg() { printf '%s\n' "$*"; }
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -42,13 +42,13 @@ if [ -z "$TAG" ]; then
 fi
 
 VER=${TAG#v}
-ASSET="dbm_${VER}_${OS}_${ARCH}.tar.gz"
+ASSET="xm-db_${VER}_${OS}_${ARCH}.tar.gz"
 BASE="https://github.com/$REPO/releases/download/$TAG"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-msg "==> Downloading dbm $TAG for $OS/$ARCH…"
+msg "==> Downloading xm-db $TAG for $OS/$ARCH…"
 curl -fsSL -o "$TMP/$ASSET" "$BASE/$ASSET" ||
 	fail "download failed: $BASE/$ASSET"
 curl -fsSL -o "$TMP/checksums.txt" "$BASE/checksums.txt" ||
@@ -68,9 +68,9 @@ fi
 
 tar -xzf "$TMP/$ASSET" -C "$TMP"
 
-DEST="${DBM_INSTALL_DIR:-/usr/local/bin}"
+DEST="${XMDB_INSTALL_DIR:-/usr/local/bin}"
 SUDO=""
-if [ -n "${DBM_INSTALL_DIR:-}" ]; then
+if [ -n "${XMDB_INSTALL_DIR:-}" ]; then
 	# Explicit override: create it and use it as-is.
 	mkdir -p "$DEST"
 elif [ ! -w "$DEST" ] && [ "$(id -u)" != "0" ]; then
@@ -83,7 +83,7 @@ elif [ ! -w "$DEST" ] && [ "$(id -u)" != "0" ]; then
 fi
 
 msg "==> Installing to $DEST…"
-$SUDO install -m 0755 "$TMP/dbm" "$DEST/dbm"
+$SUDO install -m 0755 "$TMP/xmdb" "$DEST/xmdb"
 
 case ":$PATH:" in
 	*":$DEST:"*) ;;
@@ -91,6 +91,6 @@ case ":$PATH:" in
 	   msg "       export PATH=\"$DEST:\$PATH\"" ;;
 esac
 
-msg "==> Installed: $($DEST/dbm version | head -1)"
-msg "Get started: dbm --help, or run dbm for the interactive menu"
+msg "==> Installed: $($DEST/xmdb version | head -1)"
+msg "Get started: xmdb --help, or run xmdb for the interactive menu"
 msg "Upgrade any time by re-running this installer."

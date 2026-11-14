@@ -11,10 +11,10 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
-	"github.com/iqbalmu/dbm/internal/container"
-	"github.com/iqbalmu/dbm/internal/providers"
-	"github.com/iqbalmu/dbm/internal/state"
-	"github.com/iqbalmu/dbm/pkg/utils"
+	"github.com/iqbalmu/xm-db/internal/container"
+	"github.com/iqbalmu/xm-db/internal/providers"
+	"github.com/iqbalmu/xm-db/internal/state"
+	"github.com/iqbalmu/xm-db/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -250,11 +250,11 @@ func runCreate(args []string) {
 	}
 
 	// Create container
-	containerName := fmt.Sprintf("dbm_%s", dbName)
+	containerName := fmt.Sprintf("xmdb_%s", dbName)
 	volumeName := ""
 	var volumePath string
 	if createWithVolume {
-		volumeName = fmt.Sprintf("dbm_%s_data", dbName)
+		volumeName = fmt.Sprintf("xmdb_%s_data", dbName)
 
 		if provider == utils.ProviderMySQL {
 			volumePath = "/var/lib/mysql"

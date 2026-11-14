@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"github.com/iqbalmu/dbm/internal/providers"
-	"github.com/iqbalmu/dbm/internal/state"
+	"github.com/iqbalmu/xm-db/internal/providers"
+	"github.com/iqbalmu/xm-db/internal/state"
 )
 
 // connectionConfig builds the DBConfig used to connect to a database from host.

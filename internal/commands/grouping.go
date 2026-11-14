@@ -1,6 +1,6 @@
 package commands
 
-import "github.com/iqbalmu/dbm/internal/state"
+import "github.com/iqbalmu/xm-db/internal/state"
 
 const globalGroupLabel = "global"
 

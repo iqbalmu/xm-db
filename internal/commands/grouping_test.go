@@ -3,7 +3,7 @@ package commands
 import (
 	"testing"
 
-	"github.com/iqbalmu/dbm/internal/state"
+	"github.com/iqbalmu/xm-db/internal/state"
 )
 
 func TestFilterByGroup(t *testing.T) {

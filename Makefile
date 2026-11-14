@@ -1,13 +1,13 @@
 .PHONY: build run install clean test docker-build docker-run
 
 # Binary name
-BINARY_NAME=dbm
-DOCKER_IMAGE=dbm:latest
+BINARY_NAME=xmdb
+DOCKER_IMAGE=xm-db:latest
 
 # Build the binary
 build:
 	@echo "Building $(BINARY_NAME)..."
-	go build -o bin/$(BINARY_NAME) ./cmd/dbm
+	go build -o bin/$(BINARY_NAME) ./cmd/xmdb
 
 # Run the application
 run: build
@@ -38,12 +38,12 @@ docker-build:
 docker-run: docker-build
 	docker run --rm -it \
 		-v /var/run/docker.sock:/var/run/docker.sock \
-		-v ${HOME}/.dbm:/root/.dbm \
+		-v ${HOME}/.xmdb:/root/.xmdb \
 		$(DOCKER_IMAGE)
 
 # Development mode
 dev:
-	go run ./cmd/dbm
+	go run ./cmd/xmdb
 
 # Format code
 fmt:

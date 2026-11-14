@@ -25,4 +25,4 @@ go.work
 Thumbs.db
 
 # Local state
-.dbm/
+.xmdb/

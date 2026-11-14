@@ -6,8 +6,8 @@ import (
 	"os"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/dbm/internal/container"
-	"github.com/iqbalmu/dbm/internal/state"
+	"github.com/iqbalmu/xm-db/internal/container"
+	"github.com/iqbalmu/xm-db/internal/state"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
@@ -49,7 +49,7 @@ func runStatus() {
 	}
 
 	if len(databases) == 0 {
-		color.Yellow("No databases found. Create one with: dbm create <name>")
+		color.Yellow("No databases found. Create one with: xmdb create <name>")
 		return
 	}
 

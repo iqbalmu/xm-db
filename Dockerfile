@@ -14,7 +14,7 @@ RUN go mod download
 COPY . .
 
 # Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /bin/dbm ./cmd/dbm
+RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /bin/xmdb ./cmd/xmdb
 
 # Stage 2: Runtime
 FROM alpine:3.20
@@ -26,11 +26,11 @@ RUN apk --no-cache add ca-certificates
 RUN adduser -D -H -h /app appuser
 
 # Copy binary from builder
-COPY --from=builder /bin/dbm /usr/local/bin/dbm
+COPY --from=builder /bin/xmdb /usr/local/bin/xmdb
 
 # Switch to non-root user
 USER appuser
 
-ENTRYPOINT ["dbm"]
+ENTRYPOINT ["xmdb"]
 CMD ["--help"]
 

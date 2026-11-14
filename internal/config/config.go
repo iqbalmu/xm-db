@@ -10,7 +10,7 @@ import (
 
 const (
 	ConfigFileName = "config.yaml"
-	ConfigDir      = ".dbm"
+	ConfigDir      = ".xmdb"
 )
 
 type Config struct {

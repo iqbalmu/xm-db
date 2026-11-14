@@ -1,4 +1,4 @@
-module github.com/iqbalmu/dbm
+module github.com/iqbalmu/xm-db
 
 go 1.25.5
 

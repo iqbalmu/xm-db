@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	StateDir     = ".dbm"
+	StateDir     = ".xmdb"
 	DatabasesDir = "databases"
 	StateFileExt = ".json"
 )

@@ -5,7 +5,7 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
-	"github.com/iqbalmu/dbm/internal/state"
+	"github.com/iqbalmu/xm-db/internal/state"
 )
 
 type wizardAction struct {
@@ -13,7 +13,7 @@ type wizardAction struct {
 	run   func()
 }
 
-// runWizard is the interactive menu shown by `dbm` with no arguments. Each
+// runWizard is the interactive menu shown by `xmdb` with no arguments. Each
 // action runs, then the menu redraws until the user exits.
 func runWizard() {
 	actions := []wizardAction{

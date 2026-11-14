@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/dbm/internal/providers"
+	"github.com/iqbalmu/xm-db/internal/providers"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
@@ -46,7 +46,7 @@ func runList() {
 
 	fmt.Println()
 
-	fmt.Println("Usage: dbm create <name> --provider <provider>")
-	fmt.Println("Example: dbm create mydb --provider mysql")
+	fmt.Println("Usage: xmdb create <name> --provider <provider>")
+	fmt.Println("Example: xmdb create mydb --provider mysql")
 	fmt.Println()
 }

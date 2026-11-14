@@ -4,17 +4,17 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/dbm/internal/commands/provider"
-	"github.com/iqbalmu/dbm/internal/commands/table"
+	"github.com/iqbalmu/xm-db/internal/commands/provider"
+	"github.com/iqbalmu/xm-db/internal/commands/table"
 	"github.com/spf13/cobra"
 )
 
 var Version = "1.0.0"
 
 var rootCmd = &cobra.Command{
-	Use:   "dbm",
+	Use:   "xmdb",
 	Short: "Database Management CLI for Development",
-	Long: `DBM is a powerful CLI tool for managing development databases.
+	Long: `xm-db is a powerful CLI tool for managing development databases.
 It supports MySQL and PostgreSQL with easy container management.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runWizard()
@@ -50,42 +50,42 @@ func showOverview() {
 	commandColor := color.New(color.FgGreen)
 
 	titleColor.Println("\n╔═══════════════════════════════════════════════════════╗")
-	titleColor.Println("║          DBM - Database Management CLI                ║")
+	titleColor.Println("║          xm-db - Database Management CLI              ║")
 	titleColor.Println("╚═══════════════════════════════════════════════════════╝")
 
 	subtitleColor.Println("\nManage your development databases with ease!")
 	subtitleColor.Println("Supports: MySQL, PostgreSQL")
 
 	fmt.Println("\n📦 Common Commands:")
-	commandColor.Print("  dbm version")
+	commandColor.Print("  xmdb version")
 	fmt.Println("              Show version information")
 
-	commandColor.Print("  dbm status")
+	commandColor.Print("  xmdb status")
 	fmt.Println("               Show status of all databases")
 
-	commandColor.Print("  dbm provider list")
+	commandColor.Print("  xmdb provider list")
 	fmt.Println("         List available database providers")
 
-	commandColor.Print("  dbm create <name>")
+	commandColor.Print("  xmdb create <name>")
 	fmt.Println("           Create a new database")
 
-	commandColor.Print("  dbm list")
+	commandColor.Print("  xmdb list")
 	fmt.Println("                  List all managed databases")
 
-	commandColor.Print("  dbm start <name>")
+	commandColor.Print("  xmdb start <name>")
 	fmt.Println("           Start a database")
 
-	commandColor.Print("  dbm stop <name>")
+	commandColor.Print("  xmdb stop <name>")
 	fmt.Println("            Stop a database")
 
-	commandColor.Print("  dbm connect <name>")
+	commandColor.Print("  xmdb connect <name>")
 	fmt.Println("          Show connection information")
 
 	fmt.Println("\n💡 Quick Start:")
-	fmt.Println("  1. dbm create mydb --provider mysql")
-	fmt.Println("  2. dbm connect mydb")
-	fmt.Println("  3. dbm table list mydb")
+	fmt.Println("  1. xmdb create mydb --provider mysql")
+	fmt.Println("  2. xmdb connect mydb")
+	fmt.Println("  3. xmdb table list mydb")
 
-	fmt.Println("\n📖 For more information, run: dbm --help")
+	fmt.Println("\n📖 For more information, run: xmdb --help")
 	fmt.Println()
 }

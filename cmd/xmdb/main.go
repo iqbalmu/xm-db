@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/iqbalmu/dbm/internal/commands"
+	"github.com/iqbalmu/xm-db/internal/commands"
 )
 
 func main() {

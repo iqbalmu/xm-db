@@ -14,7 +14,7 @@ var versionCmd = &cobra.Command{
 		titleColor := color.New(color.FgCyan, color.Bold)
 		infoColor := color.New(color.FgWhite)
 
-		titleColor.Printf("DBM Version: ")
+		titleColor.Printf("XMDB Version: ")
 		infoColor.Println(Version)
 
 		fmt.Println("Supported Providers:")

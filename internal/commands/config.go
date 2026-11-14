@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/dbm/internal/config"
+	"github.com/iqbalmu/xm-db/internal/config"
 	"github.com/spf13/cobra"
 )
 
@@ -48,7 +48,7 @@ func runConfigInit() {
 		color.Yellow("⚠️  Configuration file already exists")
 		path, _ := config.GetConfigPath()
 		fmt.Printf("Path: %s\n", path)
-		fmt.Println("\nUse 'dbm config show' to view current configuration")
+		fmt.Println("\nUse 'xmdb config show' to view current configuration")
 		return
 	}
 
@@ -88,7 +88,7 @@ func runConfigPath() {
 
 	if !config.Exists() {
 		color.Yellow("\n⚠️  Configuration file does not exist yet")
-		fmt.Println("Run 'dbm config init' to create it")
+		fmt.Println("Run 'xmdb config init' to create it")
 	}
 }
 
