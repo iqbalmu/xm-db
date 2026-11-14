@@ -62,6 +62,9 @@ func runInfo(name string) {
 	labelColor.Print("Provider:       ")
 	valueColor.Println(db.Provider)
 
+	labelColor.Print("Group:          ")
+	valueColor.Println(groupLabel(db.Group))
+
 	labelColor.Print("Version:        ")
 	valueColor.Println(db.Version)
 

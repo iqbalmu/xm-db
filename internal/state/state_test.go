@@ -63,6 +63,38 @@ func TestStateFileIsOwnerOnly(t *testing.T) {
 	}
 }
 
+func TestGroupRoundtrip(t *testing.T) {
+	m := newTestManager(t)
+	want := sampleDB("app")
+	want.Group = "work"
+
+	if err := m.Save(want); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	got, err := m.Load("app")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if got.Group != "work" {
+		t.Errorf("Group = %q, want work", got.Group)
+	}
+
+	// Legacy state files without the group field load as global.
+	plain := sampleDB("plain")
+	plain.Group = ""
+	if err := m.Save(plain); err != nil {
+		t.Fatalf("Save plain: %v", err)
+	}
+	got, err = m.Load("plain")
+	if err != nil {
+		t.Fatalf("Load plain: %v", err)
+	}
+	if got.Group != "" {
+		t.Errorf("ungrouped Group = %q, want empty", got.Group)
+	}
+}
+
 func TestExistsAndDelete(t *testing.T) {
 	m := newTestManager(t)
 	if m.Exists("app") {

@@ -12,12 +12,19 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var statusCmd = &cobra.Command{
-	Use:   "status",
-	Short: "Show status of all managed databases",
-	Run: func(cmd *cobra.Command, args []string) {
-		runStatus()
-	},
+var (
+	statusCmd = &cobra.Command{
+		Use:   "status",
+		Short: "Show status of all managed databases",
+		Run: func(cmd *cobra.Command, args []string) {
+			runStatus()
+		},
+	}
+	statusGroup string
+)
+
+func init() {
+	statusCmd.Flags().StringVarP(&statusGroup, "group", "g", "", "Filter by group ('global' for ungrouped databases)")
 }
 
 func runStatus() {
@@ -31,6 +38,14 @@ func runStatus() {
 	if err != nil {
 		color.Red("Error loading databases: %v", err)
 		return
+	}
+
+	if total := len(databases); total > 0 {
+		databases = filterByGroup(databases, statusGroup)
+		if len(databases) == 0 {
+			color.Yellow("\nNo databases in group '%s'.", statusGroup)
+			return
+		}
 	}
 
 	if len(databases) == 0 {
@@ -62,6 +77,7 @@ func runStatus() {
 		data = append(data, []any{
 			db.Name,
 			db.Provider,
+			groupLabel(db.Group),
 			status,
 			db.Port,
 			createdAt,
@@ -71,7 +87,7 @@ func runStatus() {
 	fmt.Println()
 
 	table := tablewriter.NewTable(os.Stdout)
-	table.Header("Name", "Provider", "Status", "Port", "Created")
+	table.Header("Name", "Provider", "Group", "Status", "Port", "Created")
 	table.Bulk(data)
 	table.Render()
 

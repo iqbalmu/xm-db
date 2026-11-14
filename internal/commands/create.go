@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -27,6 +28,7 @@ var (
 	createProvider    string
 	createVersion     string
 	createPort        int
+	createGroup       string
 	createInteractive bool
 	createWithVolume  bool
 )
@@ -44,6 +46,7 @@ func init() {
 	createCmd.Flags().StringVarP(&createProvider, "provider", "p", "", "Database provider (mysql, postgres)")
 	createCmd.Flags().StringVarP(&createVersion, "version", "v", "", "Database version")
 	createCmd.Flags().IntVar(&createPort, "port", 0, "Host port")
+	createCmd.Flags().StringVarP(&createGroup, "group", "g", "", "Group the database belongs to (empty = global)")
 	createCmd.Flags().BoolVarP(&createInteractive, "interactive", "i", false, "Interactive mode")
 	createCmd.Flags().BoolVar(&createWithVolume, "volume", true, "Create with persistent volume (default: true)")
 }
@@ -120,6 +123,13 @@ func runCreate(args []string) {
 		}
 		port = parsedPort
 
+		if err := survey.AskOne(&survey.Input{
+			Message: "Group (Enter for global):",
+		}, &createGroup); err != nil {
+			color.Red("Error: %v", err)
+			return
+		}
+
 		if err := survey.AskOne(&survey.Password{
 			Message: "Root password:",
 		}, &rootPassword, survey.WithValidator(survey.Required)); err != nil {
@@ -179,6 +189,13 @@ func runCreate(args []string) {
 
 		username = defaultUsername
 		createUser = true
+
+		if version == "" {
+			version = providers.DefaultMySQLVersion
+			if provider == utils.ProviderPostgres {
+				version = providers.DefaultPostgresVersion
+			}
+		}
 	}
 
 	// Validate
@@ -329,6 +346,7 @@ func runCreate(args []string) {
 		Name:          dbName,
 		Provider:      provider,
 		Version:       version,
+		Group:         strings.TrimSpace(createGroup),
 		ContainerName: containerName,
 		ContainerID:   containerID,
 		Port:          port,

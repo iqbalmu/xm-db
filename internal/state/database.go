@@ -8,6 +8,7 @@ type Database struct {
 	Name          string    `json:"name"`
 	Provider      string    `json:"provider"`
 	Version       string    `json:"version"`
+	Group         string    `json:"group,omitempty"`
 	ContainerName string    `json:"container_name"`
 	ContainerID   string    `json:"container_id"`
 	Port          int       `json:"port"`
