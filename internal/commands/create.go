@@ -235,7 +235,7 @@ func runCreate(args []string) {
 	color.Cyan("\n⏳ Creating %s database '%s'...\n", provider, dbName)
 
 	ctx := context.Background()
-	dockerMgr, err := container.NewDockerManager()
+	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
 		color.Red("Error: %v", err)
 		return

@@ -9,7 +9,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var Version = "1.0.0"
+var (
+	Version     = "1.0.0"
+	runtimeMode string
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "xmdb",
@@ -26,6 +29,7 @@ func Execute() error {
 }
 
 func init() {
+	rootCmd.PersistentFlags().StringVar(&runtimeMode, "runtime", "auto", "Container daemon to connect to (auto, docker, podman)")
 	rootCmd.AddCommand(versionCmd)
 	rootCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(configCmd)

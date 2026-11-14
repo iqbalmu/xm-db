@@ -53,7 +53,7 @@ func runStatus() {
 		return
 	}
 
-	dockerMgr, err := container.NewDockerManager()
+	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
 		color.Red("Error connecting to Docker: %v", err)
 		return

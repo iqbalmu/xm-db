@@ -145,6 +145,10 @@ xmdb restore appdb ./dump.sql
 
 ## Design notes
 
+- **Works with Docker and Podman** — on every connect `xmdb` probes candidate
+  daemons in order: `$DOCKER_HOST` (the standard override, always wins),
+  `/var/run/docker.sock`, then the rootless and rootful Podman sockets. The
+  first one that answers wins; pin a side with `--runtime docker|podman`.
 - **State**: one JSON file per database in `~/.xmdb/databases/`, written with
   `0600` permissions (credentials included).
 - **Ports bind to `127.0.0.1` only** — your dev database is not reachable from

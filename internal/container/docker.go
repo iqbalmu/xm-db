@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/docker/docker/api/types/container"
@@ -18,18 +20,74 @@ import (
 const (
 	DefaultStopTimeout  = 10
 	HealthCheckInterval = 1 * time.Second
+	connectProbeTimeout = 1500 * time.Millisecond
 )
 
 type DockerManager struct {
 	client *client.Client
 }
 
-func NewDockerManager() (*DockerManager, error) {
-	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
-	if err != nil {
-		return nil, err
+// endpoint is one candidate daemon address to probe.
+type endpoint struct {
+	name string
+	host string
+}
+
+// candidateEndpoints lists daemon addresses in probe order for the selected
+// runtime: "auto", "docker" or "podman". A set DOCKER_HOST always wins — it is
+// the standard override.
+func candidateEndpoints(runtime string) []endpoint {
+	if host := os.Getenv("DOCKER_HOST"); host != "" {
+		return []endpoint{{"DOCKER_HOST", host}}
 	}
-	return &DockerManager{client: cli}, nil
+
+	var out []endpoint
+	if runtime == "auto" || runtime == "docker" {
+		out = append(out, endpoint{"docker", "unix:///var/run/docker.sock"})
+	}
+	if runtime == "auto" || runtime == "podman" {
+		if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
+			out = append(out, endpoint{"podman (rootless)", "unix://" + dir + "/podman/podman.sock"})
+		}
+		if uid := os.Getuid(); uid > 0 {
+			out = append(out, endpoint{"podman (rootless)", fmt.Sprintf("unix:///run/user/%d/podman/podman.sock", uid)})
+		}
+		out = append(out, endpoint{"podman (rootful)", "unix:///run/podman/podman.sock"})
+	}
+	return out
+}
+
+// NewDockerManager connects to a Docker-compatible daemon — Docker, Podman, or
+// anything speaking the same API — probing candidates until one answers.
+func NewDockerManager(runtime string) (*DockerManager, error) {
+	var tried []string
+	for _, ep := range candidateEndpoints(runtime) {
+		opts := []client.Opt{client.WithHost(ep.host), client.WithAPIVersionNegotiation()}
+		if ep.name == "DOCKER_HOST" {
+			// The standard override also carries TLS settings from env.
+			opts = []client.Opt{client.FromEnv, client.WithAPIVersionNegotiation()}
+		}
+
+		cli, err := client.NewClientWithOpts(opts...)
+		if err != nil {
+			tried = append(tried, ep.name+": "+err.Error())
+			continue
+		}
+
+		ctx, cancel := context.WithTimeout(context.Background(), connectProbeTimeout)
+		_, err = cli.Ping(ctx)
+		cancel()
+		if err == nil {
+			return &DockerManager{client: cli}, nil
+		}
+		tried = append(tried, fmt.Sprintf("%s [%s]: %v", ep.name, ep.host, err))
+		cli.Close()
+	}
+
+	return nil, fmt.Errorf(
+		"no Docker-compatible daemon reachable (tried: %s) — start Docker, or for rootless podman: systemctl --user start podman.socket",
+		strings.Join(tried, "; "),
+	)
 }
 
 func (d *DockerManager) PullImage(ctx context.Context, imageName string) error {

@@ -59,7 +59,7 @@ func runRemove(name string) {
 		}
 	}
 
-	dockerMgr, err := container.NewDockerManager()
+	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
 		color.Red("Error: %v", err)
 		return

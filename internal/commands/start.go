@@ -31,7 +31,7 @@ func runStart(name string) {
 		return
 	}
 
-	dockerMgr, err := container.NewDockerManager()
+	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
 		color.Red("Error: %v", err)
 		return
