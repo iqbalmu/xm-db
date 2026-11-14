@@ -6,8 +6,8 @@ import (
 
 	"github.com/fatih/color"
 	"github.com/iqbalmu/dbm/internal/container"
+	"github.com/iqbalmu/dbm/internal/providers"
 	"github.com/iqbalmu/dbm/internal/state"
-	"github.com/iqbalmu/dbm/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -79,7 +79,11 @@ func runInfo(name string) {
 	valueColor.Println(db.ContainerName)
 
 	labelColor.Print("Container ID:   ")
-	valueColor.Println(db.ContainerID[:12])
+	if len(db.ContainerID) > 12 {
+		valueColor.Println(db.ContainerID[:12])
+	} else {
+		valueColor.Println(db.ContainerID)
+	}
 
 	labelColor.Print("Database Name:  ")
 	valueColor.Println(db.DatabaseName)
@@ -96,14 +100,13 @@ func runInfo(name string) {
 	titleColor.Println("Connection Information:")
 	fmt.Println(color.CyanString("───────────────────────────────────────"))
 
-	connStr := utils.BuildConnectionString(
-		db.Provider,
-		db.GetUsername(),
-		db.GetPassword(),
-		"localhost",
-		db.Port,
-		db.DatabaseName,
-	)
+	prov, err := providers.For(db.Provider)
+	if err != nil {
+		color.Red("Error: %v", err)
+		return
+	}
+
+	connStr := prov.GetConnectionString(connectionConfig(db))
 
 	labelColor.Print("Connection String: ")
 	valueColor.Println(connStr)

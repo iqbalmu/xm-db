@@ -1,11 +1,12 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/fatih/color"
+	"github.com/iqbalmu/dbm/internal/providers"
 	"github.com/iqbalmu/dbm/internal/state"
-	"github.com/iqbalmu/dbm/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -37,36 +38,48 @@ func runConnect(name string) {
 		return
 	}
 
-	// Build connection string using helper methods
-	connStr := utils.BuildConnectionString(
-		db.Provider,
-		db.GetUsername(),
-		db.GetPassword(),
-		"localhost",
-		db.Port,
-		db.DatabaseName,
-	)
+	prov, err := providers.For(db.Provider)
+	if err != nil {
+		color.Red("Error: %v", err)
+		return
+	}
+
+	connStr := prov.GetConnectionString(connectionConfig(db))
 
 	switch connectFormat {
 	case "json":
-		fmt.Printf(`{
-  "provider": "%s",
-  "host": "localhost",
-  "port": %d,
-  "database": "%s",
-  "user": "%s",
-  "password": "%s",
-  "connection_string": "%s"
-}
-`, db.Provider, db.Port, db.DatabaseName, db.User, db.UserPassword, connStr)
+		info := struct {
+			Provider         string `json:"provider"`
+			Host             string `json:"host"`
+			Port             int    `json:"port"`
+			Database         string `json:"database"`
+			User             string `json:"user"`
+			Password         string `json:"password"`
+			ConnectionString string `json:"connection_string"`
+		}{
+			Provider:         db.Provider,
+			Host:             "localhost",
+			Port:             db.Port,
+			Database:         db.DatabaseName,
+			User:             db.GetUsername(),
+			Password:         db.GetPassword(),
+			ConnectionString: connStr,
+		}
+
+		data, err := json.MarshalIndent(info, "", "  ")
+		if err != nil {
+			color.Red("Error: %v", err)
+			return
+		}
+		fmt.Println(string(data))
 
 	case "env":
 		fmt.Printf("DB_PROVIDER=%s\n", db.Provider)
 		fmt.Printf("DB_HOST=localhost\n")
 		fmt.Printf("DB_PORT=%d\n", db.Port)
 		fmt.Printf("DB_NAME=%s\n", db.DatabaseName)
-		fmt.Printf("DB_USER=%s\n", db.User)
-		fmt.Printf("DB_PASSWORD=%s\n", db.UserPassword)
+		fmt.Printf("DB_USER=%s\n", db.GetUsername())
+		fmt.Printf("DB_PASSWORD=%s\n", db.GetPassword())
 
 	default:
 		color.Cyan("\n🔗 Connection Information for '%s':\n", name)
@@ -86,13 +99,11 @@ func runConnect(name string) {
 		labelColor.Print("Database:  ")
 		fmt.Println(db.DatabaseName)
 
-		if db.User != "" {
-			labelColor.Print("User:      ")
-			fmt.Println(db.User)
+		labelColor.Print("User:      ")
+		fmt.Println(db.GetUsername())
 
-			labelColor.Print("Password:  ")
-			fmt.Println(db.UserPassword)
-		}
+		labelColor.Print("Password:  ")
+		fmt.Println(db.GetPassword())
 
 		fmt.Println()
 		labelColor.Println("Connection String:")

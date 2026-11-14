@@ -3,6 +3,7 @@ package providers
 import (
 	"context"
 	"database/sql"
+	"fmt"
 )
 
 const (
@@ -25,6 +26,18 @@ type Provider interface {
 	ListTables(ctx context.Context, db *sql.DB, dbName string) ([]string, error)
 }
 
+// For returns the provider implementation for a provider name.
+func For(name string) (Provider, error) {
+	switch name {
+	case "mysql":
+		return NewMySQLProvider(), nil
+	case "postgres":
+		return NewPostgresProvider(), nil
+	default:
+		return nil, fmt.Errorf("unsupported provider '%s'", name)
+	}
+}
+
 type DBConfig struct {
 	Host         string
 	Port         int
@@ -32,4 +45,17 @@ type DBConfig struct {
 	DatabaseName string
 	User         string
 	UserPassword string
+}
+
+// Auth returns the username and password to connect with, preferring the
+// dedicated user over the superuser account.
+func (c *DBConfig) Auth(superuser string) (string, string) {
+	if c.User != "" {
+		pass := c.UserPassword
+		if pass == "" {
+			pass = c.RootPassword
+		}
+		return c.User, pass
+	}
+	return superuser, c.RootPassword
 }

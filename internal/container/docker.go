@@ -1,7 +1,6 @@
 package container
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"fmt"
@@ -46,9 +45,10 @@ func (d *DockerManager) PullImage(ctx context.Context, imageName string) error {
 }
 
 func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerConfig) (string, error) {
-	// Port binding
+	// Port binding — loopback only: dev databases must not be reachable from
+	// other machines.
 	portBinding := nat.PortBinding{
-		HostIP:   "0.0.0.0",
+		HostIP:   "127.0.0.1",
 		HostPort: fmt.Sprintf("%d", config.Port),
 	}
 
@@ -127,29 +127,6 @@ func (d *DockerManager) IsContainerRunning(ctx context.Context, containerID stri
 	return inspect.State.Running, nil
 }
 
-func (d *DockerManager) WaitForHealthy(ctx context.Context, containerID string, timeout time.Duration) error {
-	ctx, cancel := context.WithTimeout(ctx, timeout)
-	defer cancel()
-
-	ticker := time.NewTicker(HealthCheckInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("timeout waiting for container to be healthy")
-		case <-ticker.C:
-			running, err := d.IsContainerRunning(ctx, containerID)
-			if err != nil {
-				continue
-			}
-			if running {
-				return nil
-			}
-		}
-	}
-}
-
 // GetContainerLogs retrieves logs from a container
 func (d *DockerManager) GetContainerLogs(ctx context.Context, containerID string, tail string, follow bool) (io.ReadCloser, error) {
 	options := container.LogsOptions{
@@ -162,54 +139,99 @@ func (d *DockerManager) GetContainerLogs(ctx context.Context, containerID string
 	return d.client.ContainerLogs(ctx, containerID, options)
 }
 
-// ExecCommand executes a command in a running container
-func (d *DockerManager) ExecCommand(ctx context.Context, containerID string, cmd []string) (string, error) {
+// ExecResult holds the captured output and exit status of a finished exec.
+type ExecResult struct {
+	Stdout   string
+	Stderr   string
+	ExitCode int
+}
+
+// Exec runs cmd in the container, optionally feeding stdin to it, and returns
+// the captured output. err reports transport failures only; check ExitCode for
+// the command's own status.
+func (d *DockerManager) Exec(ctx context.Context, containerID string, cmd []string, stdin string) (*ExecResult, error) {
 	execConfig := container.ExecOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd:          cmd,
 	}
+	if stdin != "" {
+		execConfig.AttachStdin = true
+	}
 
 	execID, err := d.client.ContainerExecCreate(ctx, containerID, execConfig)
 	if err != nil {
-		return "", fmt.Errorf("failed to create exec: %w", err)
+		return nil, fmt.Errorf("failed to create exec: %w", err)
 	}
 
 	resp, err := d.client.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{})
 	if err != nil {
-		return "", fmt.Errorf("failed to attach exec: %w", err)
+		return nil, fmt.Errorf("failed to attach exec: %w", err)
 	}
 	defer resp.Close()
 
+	// Write stdin concurrently: a large dump can fill the pipe while the
+	// command's output fills ours, which would deadlock on sequential I/O.
+	stdinErr := make(chan error, 1)
+	if stdin != "" {
+		go func() {
+			_, err := resp.Conn.Write([]byte(stdin))
+			if err == nil {
+				resp.CloseWrite()
+			}
+			stdinErr <- err
+		}()
+	}
+
 	var stdout, stderr bytes.Buffer
 	if _, err := stdcopy.StdCopy(&stdout, &stderr, resp.Reader); err != nil {
-		return "", fmt.Errorf("failed to read exec output: %w", err)
+		return nil, fmt.Errorf("failed to read exec output: %w", err)
 	}
-
-	if stderr.Len() > 0 {
-		return "", fmt.Errorf("exec error: %s", stderr.String())
-	}
-
-	return stdout.String(), nil
-}
-
-// StreamLogs streams container logs line by line to a channel
-func (d *DockerManager) StreamLogs(ctx context.Context, containerID string, lines chan<- string) error {
-	logs, err := d.GetContainerLogs(ctx, containerID, "100", true)
-	if err != nil {
-		return err
-	}
-	defer logs.Close()
-
-	scanner := bufio.NewScanner(logs)
-	for scanner.Scan() {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case lines <- scanner.Text():
+	if stdin != "" {
+		if err := <-stdinErr; err != nil {
+			return nil, fmt.Errorf("failed to write stdin: %w", err)
 		}
 	}
-	return scanner.Err()
+
+	inspect, err := d.client.ContainerExecInspect(ctx, execID.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to inspect exec: %w", err)
+	}
+
+	return &ExecResult{
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
+		ExitCode: inspect.ExitCode,
+	}, nil
+}
+
+// ExecCommand runs cmd in the container and fails if it exits non-zero.
+func (d *DockerManager) ExecCommand(ctx context.Context, containerID string, cmd []string) (string, error) {
+	res, err := d.Exec(ctx, containerID, cmd, "")
+	if err != nil {
+		return "", err
+	}
+	if res.ExitCode != 0 {
+		return "", fmt.Errorf("command failed (exit %d): %s", res.ExitCode, res.Stderr)
+	}
+	return res.Stdout, nil
+}
+
+// VolumeExists reports whether a named volume exists.
+func (d *DockerManager) VolumeExists(ctx context.Context, name string) (bool, error) {
+	_, err := d.client.VolumeInspect(ctx, name)
+	if client.IsErrNotFound(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+// RemoveVolume deletes a named volume.
+func (d *DockerManager) RemoveVolume(ctx context.Context, name string) error {
+	return d.client.VolumeRemove(ctx, name, false)
 }
 
 type ContainerConfig struct {

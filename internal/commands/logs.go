@@ -3,8 +3,9 @@ package commands
 import (
 	"context"
 	"fmt"
-	"io"
+	"os"
 
+	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/fatih/color"
 	"github.com/iqbalmu/dbm/internal/container"
 	"github.com/iqbalmu/dbm/internal/state"
@@ -61,8 +62,9 @@ func runLogs(name string) {
 	}
 	defer logs.Close()
 
-	// Copy logs to stdout
-	if _, err := io.Copy(color.Output, logs); err != nil {
+	// Container streams are multiplexed (stdout/stderr frames); decode them,
+	// otherwise the raw frame headers corrupt the output.
+	if _, err := stdcopy.StdCopy(color.Output, os.Stderr, logs); err != nil {
 		color.Red("Error reading logs: %v", err)
 		return
 	}

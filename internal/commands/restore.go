@@ -101,20 +101,29 @@ func runRestore(name, backupFile string) {
 			"-u", "root",
 			fmt.Sprintf("-p%s", db.RootPassword),
 			db.DatabaseName,
-			"-e", string(sqlData),
 		}
 	} else {
 		cmd = []string{
 			"psql",
 			"-U", "postgres",
 			"-d", db.DatabaseName,
-			"-c", string(sqlData),
+			"-v", "ON_ERROR_STOP=1",
 		}
 	}
 
-	if _, err := dockerMgr.ExecCommand(ctx, db.ContainerID, cmd); err != nil {
+	// Pipe the SQL file through stdin: passing it as an argument would hit
+	// exec argument size limits on large dumps.
+	res, err := dockerMgr.Exec(ctx, db.ContainerID, cmd, string(sqlData))
+	if err != nil {
 		color.Red("Error restoring database: %v", err)
 		return
+	}
+	if res.ExitCode != 0 {
+		color.Red("Restore failed (exit %d):\n%s", res.ExitCode, res.Stderr)
+		return
+	}
+	if res.Stderr != "" {
+		color.Yellow("Warnings:\n%s", res.Stderr)
 	}
 
 	fileInfo, _ := os.Stat(absPath)

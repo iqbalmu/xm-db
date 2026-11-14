@@ -2,7 +2,6 @@ package utils
 
 import (
 	"crypto/rand"
-	"fmt"
 	"math/big"
 )
 
@@ -37,13 +36,4 @@ func GeneratePassword(length int) (string, error) {
 	}
 
 	return string(b), nil
-}
-
-func BuildConnectionString(provider, user, password, host string, port int, dbName string) string {
-	if provider == ProviderPostgres {
-		return fmt.Sprintf("postgres://%s:%s@%s:%d/%s",
-			user, password, host, port, dbName)
-	}
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s",
-		user, password, host, port, dbName)
 }

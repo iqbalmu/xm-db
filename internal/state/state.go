@@ -24,7 +24,7 @@ func NewManager() (*Manager, error) {
 	}
 
 	stateDir := filepath.Join(homeDir, StateDir, DatabasesDir)
-	if err := os.MkdirAll(stateDir, 0o755); err != nil {
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
 		return nil, fmt.Errorf("failed to create state directory: %w", err)
 	}
 
@@ -37,7 +37,8 @@ func (m *Manager) Save(db *Database) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal database state: %w", err)
 	}
-	if err := os.WriteFile(filePath, data, 0o644); err != nil {
+	// Credentials are stored in these files, so keep them owner-only.
+	if err := os.WriteFile(filePath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
 	}
 	return nil

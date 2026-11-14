@@ -37,8 +37,9 @@ func (m *MySQLProvider) GetEnvVars(config *DBConfig) []string {
 }
 
 func (m *MySQLProvider) GetConnectionString(config *DBConfig) string {
-	return fmt.Sprintf("root:%s@tcp(%s:%d)/%s",
-		config.RootPassword,
+	user, password := config.Auth("root")
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?multiStatements=true",
+		user, password,
 		config.Host,
 		config.Port,
 		config.DatabaseName,
@@ -46,24 +47,24 @@ func (m *MySQLProvider) GetConnectionString(config *DBConfig) string {
 }
 
 func (m *MySQLProvider) CreateDatabase(ctx context.Context, db *sql.DB, dbName string) error {
-	_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS `%s`", dbName))
+	_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", QuoteIdentMySQL(dbName)))
 	return err
 }
 
 func (m *MySQLProvider) CreateUser(ctx context.Context, db *sql.DB, username, password, dbName string) error {
-	// Create user
+	user := QuoteLiteralMySQL(username)
+
 	_, err := db.ExecContext(ctx, fmt.Sprintf(
-		"CREATE USER IF NOT EXISTS '%s'@'%%' IDENTIFIED BY '%s'",
-		username, password,
+		"CREATE USER IF NOT EXISTS %s@'%%' IDENTIFIED BY %s",
+		user, QuoteLiteralMySQL(password),
 	))
 	if err != nil {
 		return err
 	}
 
-	// Grant privileges
 	_, err = db.ExecContext(ctx, fmt.Sprintf(
-		"GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'",
-		dbName, username,
+		"GRANT ALL PRIVILEGES ON %s.* TO %s@'%%'",
+		QuoteIdentMySQL(dbName), user,
 	))
 	if err != nil {
 		return err
@@ -92,7 +93,7 @@ func (m *MySQLProvider) ListDatabases(ctx context.Context, db *sql.DB) ([]string
 }
 
 func (m *MySQLProvider) ListTables(ctx context.Context, db *sql.DB, dbName string) ([]string, error) {
-	rows, err := db.QueryContext(ctx, fmt.Sprintf("SHOW TABLES FROM `%s`", dbName))
+	rows, err := db.QueryContext(ctx, fmt.Sprintf("SHOW TABLES FROM %s", QuoteIdentMySQL(dbName)))
 	if err != nil {
 		return nil, err
 	}

@@ -38,14 +38,9 @@ func runDescribe(dbName, tableName string) {
 	}
 
 	// Get provider
-	var prov providers.Provider
-	switch dbState.Provider {
-	case "mysql":
-		prov = providers.NewMySQLProvider()
-	case "postgres":
-		prov = providers.NewPostgresProvider()
-	default:
-		color.Red("Error: Unsupported provider")
+	prov, err := providers.For(dbState.Provider)
+	if err != nil {
+		color.Red("Error: %v", err)
 		return
 	}
 
@@ -58,7 +53,7 @@ func runDescribe(dbName, tableName string) {
 	}
 
 	connStr := prov.GetConnectionString(dbConfig)
-	db, err := sql.Open(utils.GetDriverName(dbState.Provider), connStr) // PAKAI UTILS
+	db, err := sql.Open(utils.GetDriverName(dbState.Provider), connStr)
 	if err != nil {
 		color.Red("Error connecting to database: %v", err)
 		return
@@ -69,15 +64,15 @@ func runDescribe(dbName, tableName string) {
 
 	// Describe table
 	var rows *sql.Rows
-	if dbState.Provider == "mysql" {
-		rows, err = db.QueryContext(ctx, fmt.Sprintf("DESCRIBE `%s`", tableName))
+	if dbState.Provider == utils.ProviderMySQL {
+		rows, err = db.QueryContext(ctx, fmt.Sprintf("DESCRIBE %s", providers.QuoteIdentMySQL(tableName)))
 	} else {
 		rows, err = db.QueryContext(ctx, fmt.Sprintf(`
 			SELECT column_name, data_type, is_nullable, column_default
 			FROM information_schema.columns
-			WHERE table_name = '%s'
+			WHERE table_name = %s
 			ORDER BY ordinal_position
-		`, tableName))
+		`, providers.QuoteLiteralPG(tableName)))
 	}
 
 	if err != nil {
@@ -91,7 +86,7 @@ func runDescribe(dbName, tableName string) {
 	var data [][]any
 	table := tablewriter.NewTable(os.Stdout)
 
-	if dbState.Provider == "mysql" {
+	if dbState.Provider == utils.ProviderMySQL {
 		table.Header([]string{"Field", "Type", "Null", "Key", "Default", "Extra"})
 
 		for rows.Next() {

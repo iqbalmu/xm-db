@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
+	"strconv"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -16,11 +18,9 @@ import (
 )
 
 const (
-	defaultMySQLVersion    = "8.0"
-	defaultPostgresVersion = "16"
-	defaultUsername        = "dev_user"
-	containerWaitTimeout   = 30 * time.Second
-	containerInitDelay     = 5 * time.Second
+	defaultUsername       = "dev_user"
+	containerStartTimeout = 60 * time.Second
+	portProbeTimeout      = 500 * time.Millisecond
 )
 
 var (
@@ -67,17 +67,21 @@ func runCreate(args []string) {
 			return
 		}
 
-		if err := survey.AskOne(&survey.Select{
-			Message: "Select database provider:",
-			Options: []string{"mysql", "postgres"},
-		}, &provider); err != nil {
-			color.Red("Error: %v", err)
-			return
+		if createProvider == "" {
+			if err := survey.AskOne(&survey.Select{
+				Message: "Select database provider:",
+				Options: []string{"mysql", "postgres"},
+			}, &provider); err != nil {
+				color.Red("Error: %v", err)
+				return
+			}
+		} else {
+			provider = createProvider
 		}
 
-		defaultVersion := defaultMySQLVersion
+		defaultVersion := providers.DefaultMySQLVersion
 		if provider == utils.ProviderPostgres {
-			defaultVersion = defaultPostgresVersion
+			defaultVersion = providers.DefaultPostgresVersion
 		}
 
 		if err := survey.AskOne(&survey.Input{
@@ -88,20 +92,33 @@ func runCreate(args []string) {
 			return
 		}
 
-		defaultPort := 3306
+		defaultPort := providers.DefaultMySQLPort
 		if provider == utils.ProviderPostgres {
-			defaultPort = 5432
+			defaultPort = providers.DefaultPostgresPort
+		}
+		if createPort != 0 {
+			defaultPort = createPort
 		}
 
 		var portStr string
 		if err := survey.AskOne(&survey.Input{
 			Message: fmt.Sprintf("Port (default: %d):", defaultPort),
-			Default: fmt.Sprintf("%d", defaultPort),
-		}, &portStr); err != nil {
+			Default: strconv.Itoa(defaultPort),
+		}, &portStr, survey.WithValidator(survey.ComposeValidators(survey.Required, survey.Validator(func(ans interface{}) error {
+			if _, err := strconv.Atoi(ans.(string)); err != nil {
+				return fmt.Errorf("port must be a number")
+			}
+			return nil
+		})))); err != nil {
 			color.Red("Error: %v", err)
 			return
 		}
-		fmt.Sscanf(portStr, "%d", &port)
+		parsedPort, err := strconv.Atoi(portStr)
+		if err != nil {
+			color.Red("Error: invalid port '%s'", portStr)
+			return
+		}
+		port = parsedPort
 
 		if err := survey.AskOne(&survey.Password{
 			Message: "Root password:",
@@ -177,19 +194,24 @@ func runCreate(args []string) {
 	}
 
 	// Get provider
-	var prov providers.Provider
-	switch provider {
-	case utils.ProviderMySQL:
-		prov = providers.NewMySQLProvider()
-	case utils.ProviderPostgres:
-		prov = providers.NewPostgresProvider()
-	default:
-		color.Red("Error: Unsupported provider '%s'", provider)
+	prov, err := providers.For(provider)
+	if err != nil {
+		color.Red("Error: %v", err)
 		return
 	}
 
 	if port == 0 {
 		port = prov.GetDefaultPort()
+	}
+
+	// Refuse ports taken by another managed database or by any local process.
+	if owner := managedPortOwner(stateMgr, port); owner != "" {
+		color.Red("Error: Port %d is already used by database '%s'", port, owner)
+		return
+	}
+	if portInUse(port) {
+		color.Red("Error: Port %d is already in use by another process", port)
+		return
 	}
 
 	// Create database instance
@@ -212,15 +234,19 @@ func runCreate(args []string) {
 
 	// Create container
 	containerName := fmt.Sprintf("dbm_%s", dbName)
-	volumeName := fmt.Sprintf("dbm_%s_data", dbName)
-
-	// Determine volume path based on provider
+	volumeName := ""
 	var volumePath string
 	if createWithVolume {
+		volumeName = fmt.Sprintf("dbm_%s_data", dbName)
+
 		if provider == utils.ProviderMySQL {
 			volumePath = "/var/lib/mysql"
 		} else {
 			volumePath = "/var/lib/postgresql/data"
+		}
+
+		if exists, err := dockerMgr.VolumeExists(ctx, volumeName); err == nil && exists {
+			color.Yellow("⚠️  Reusing existing volume '%s' (contains data from a previous database)", volumeName)
 		}
 	}
 
@@ -243,6 +269,15 @@ func runCreate(args []string) {
 		VolumePath:    volumePath,
 	}
 
+	// Admin connection for readiness checks and user provisioning: the dev
+	// user does not exist until CreateUser runs.
+	adminConfig := &providers.DBConfig{
+		Host:         "localhost",
+		Port:         port,
+		RootPassword: rootPassword,
+		DatabaseName: dbName,
+	}
+
 	color.White("🐳 Creating container...")
 	containerID, err := dockerMgr.CreateContainer(ctx, containerConfig)
 	if err != nil {
@@ -254,36 +289,39 @@ func runCreate(args []string) {
 	color.White("▶️  Starting container...")
 	if err := dockerMgr.StartContainer(ctx, containerID); err != nil {
 		color.Red("Error starting container: %v", err)
-		dockerMgr.RemoveContainer(ctx, containerID)
+		cleanup(dockerMgr, ctx, containerID, volumeName)
 		return
 	}
 
-	// Wait for healthy
-	color.White("⏳ Waiting for database to be ready...")
-	if err := dockerMgr.WaitForHealthy(ctx, containerID, containerWaitTimeout); err != nil {
+	// Wait until the server answers a real protocol handshake. Rootless
+	// container runtimes accept host-side TCP connections before the database
+	// listens, so a bare port dial is not proof of readiness.
+	color.White("⏳ Waiting for database to accept connections...")
+	if err := waitForDatabase(ctx, provider, prov, adminConfig, containerStartTimeout); err != nil {
 		color.Red("Error: %v", err)
-		dockerMgr.RemoveContainer(ctx, containerID)
+		cleanup(dockerMgr, ctx, containerID, volumeName)
 		return
 	}
 
-	// Give it a bit more time to fully initialize
-	time.Sleep(containerInitDelay)
-
-	// Create user if requested
+	// Create user if requested. Fail hard instead of saving credentials that
+	// do not exist.
 	if createUser && username != "" {
 		color.White("👤 Creating user '%s'...", username)
 
-		connStr := prov.GetConnectionString(dbConfig)
-		db, err := sql.Open(utils.GetDriverName(provider), connStr)
+		db, err := sql.Open(utils.GetDriverName(provider), prov.GetConnectionString(adminConfig))
 		if err != nil {
-			color.Yellow("Warning: Could not create user: %v", err)
-		} else {
-			defer db.Close()
-
-			if err := prov.CreateUser(ctx, db, username, userPassword, dbName); err != nil {
-				color.Yellow("Warning: Could not create user: %v", err)
-			}
+			color.Red("Error connecting to database: %v", err)
+			cleanup(dockerMgr, ctx, containerID, volumeName)
+			return
 		}
+
+		if err := prov.CreateUser(ctx, db, username, userPassword, dbName); err != nil {
+			db.Close()
+			color.Red("Error creating user: %v", err)
+			cleanup(dockerMgr, ctx, containerID, volumeName)
+			return
+		}
+		db.Close()
 	}
 
 	// Save state
@@ -322,9 +360,69 @@ func runCreate(args []string) {
 		fmt.Println()
 
 		color.White("Connection String:")
-		connStr := utils.BuildConnectionString(provider, username, userPassword, "localhost", port, dbName)
-		fmt.Printf("  %s\n", connStr)
+		fmt.Printf("  %s\n", prov.GetConnectionString(dbConfig))
 	}
 
 	fmt.Println()
+}
+
+// waitForDatabase polls until the server completes a protocol-level handshake.
+func waitForDatabase(ctx context.Context, provider string, prov providers.Provider, cfg *providers.DBConfig, timeout time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	var lastErr error
+
+	for {
+		db, err := sql.Open(utils.GetDriverName(provider), prov.GetConnectionString(cfg))
+		if err != nil {
+			lastErr = err
+		} else {
+			lastErr = db.PingContext(ctx)
+			db.Close()
+			if lastErr == nil {
+				return nil
+			}
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout after %v waiting for database (last error: %w)", timeout, lastErr)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Second):
+		}
+	}
+}
+
+// cleanup removes a failed creation's container and data volume.
+func cleanup(dockerMgr *container.DockerManager, ctx context.Context, containerID, volumeName string) {
+	dockerMgr.RemoveContainer(ctx, containerID)
+	if volumeName != "" {
+		dockerMgr.RemoveVolume(ctx, volumeName)
+	}
+}
+
+// managedPortOwner returns the name of the managed database bound to port.
+func managedPortOwner(m *state.Manager, port int) string {
+	dbs, err := m.List()
+	if err != nil {
+		return ""
+	}
+	for _, d := range dbs {
+		if d.Port == port {
+			return d.Name
+		}
+	}
+	return ""
+}
+
+// portInUse reports whether a local process is already listening on the port.
+func portInUse(port int) bool {
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)), portProbeTimeout)
+	if err != nil {
+		return false
+	}
+	conn.Close()
+	return true
 }

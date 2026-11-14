@@ -1,0 +1,96 @@
+package providers
+
+import (
+	"strings"
+	"testing"
+)
+
+func TestGetImageName(t *testing.T) {
+	if got := NewMySQLProvider().GetImageName(""); got != "mysql:8.0" {
+		t.Errorf("mysql default image = %q, want mysql:8.0", got)
+	}
+	if got := NewPostgresProvider().GetImageName(""); got != "postgres:16" {
+		t.Errorf("postgres default image = %q, want postgres:16", got)
+	}
+	if got := NewMySQLProvider().GetImageName("9.1"); got != "mysql:9.1" {
+		t.Errorf("mysql custom image = %q, want mysql:9.1", got)
+	}
+}
+
+func TestGetDefaultPort(t *testing.T) {
+	if got := NewMySQLProvider().GetDefaultPort(); got != 3306 {
+		t.Errorf("mysql default port = %d, want 3306", got)
+	}
+	if got := NewPostgresProvider().GetDefaultPort(); got != 5432 {
+		t.Errorf("postgres default port = %d, want 5432", got)
+	}
+}
+
+func TestGetEnvVars(t *testing.T) {
+	cfg := &DBConfig{RootPassword: "s3cret", DatabaseName: "app"}
+
+	mysqlVars := strings.Join(NewMySQLProvider().GetEnvVars(cfg), " ")
+	if !strings.Contains(mysqlVars, "MYSQL_ROOT_PASSWORD=s3cret") ||
+		!strings.Contains(mysqlVars, "MYSQL_DATABASE=app") {
+		t.Errorf("mysql env vars missing expected entries: %s", mysqlVars)
+	}
+
+	pgVars := strings.Join(NewPostgresProvider().GetEnvVars(cfg), " ")
+	if !strings.Contains(pgVars, "POSTGRES_PASSWORD=s3cret") ||
+		!strings.Contains(pgVars, "POSTGRES_DB=app") {
+		t.Errorf("postgres env vars missing expected entries: %s", pgVars)
+	}
+}
+
+func TestGetConnectionStringAuth(t *testing.T) {
+	super := &DBConfig{Host: "localhost", Port: 5432, RootPassword: "rootpw", DatabaseName: "app"}
+
+	user, pass := super.Auth("postgres")
+	if user != "postgres" || pass != "rootpw" {
+		t.Errorf("Auth on superuser config = %s/%s, want postgres/rootpw", user, pass)
+	}
+
+	withUser := &DBConfig{Host: "localhost", Port: 5432, RootPassword: "rootpw",
+		DatabaseName: "app", User: "dev_user", UserPassword: "devpw"}
+	user, pass = withUser.Auth("postgres")
+	if user != "dev_user" || pass != "devpw" {
+		t.Errorf("Auth with user = %s/%s, want dev_user/devpw", user, pass)
+	}
+
+	// A user without a dedicated password falls back to the superuser password.
+	noPass := &DBConfig{RootPassword: "rootpw", User: "dev_user"}
+	user, pass = noPass.Auth("postgres")
+	if user != "dev_user" || pass != "rootpw" {
+		t.Errorf("Auth user without password = %s/%s, want dev_user/rootpw", user, pass)
+	}
+}
+
+func TestMySQLGetConnectionString(t *testing.T) {
+	cfg := &DBConfig{Host: "localhost", Port: 3306, RootPassword: "rootpw",
+		DatabaseName: "app", User: "dev_user", UserPassword: "devpw"}
+
+	want := "dev_user:devpw@tcp(localhost:3306)/app?multiStatements=true"
+	if got := NewMySQLProvider().GetConnectionString(cfg); got != want {
+		t.Errorf("mysql conn string = %q, want %q", got, want)
+	}
+}
+
+func TestPostgresGetConnectionString(t *testing.T) {
+	cfg := &DBConfig{Host: "localhost", Port: 5432, RootPassword: "rootpw",
+		DatabaseName: "app", User: "dev_user", UserPassword: "devpw"}
+
+	got := NewPostgresProvider().GetConnectionString(cfg)
+	for _, want := range []string{"postgres://dev_user:devpw@", "localhost:5432", "/app", "sslmode=disable"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("postgres conn string %q missing %q", got, want)
+		}
+	}
+
+	// Special characters must be URL-escaped.
+	weird := &DBConfig{Host: "localhost", Port: 5432, RootPassword: "rootpw",
+		DatabaseName: "app", User: "dev@user", UserPassword: "p@ss:word"}
+	got = NewPostgresProvider().GetConnectionString(weird)
+	if strings.Contains(got, "dev@user") || strings.Contains(got, "p@ss:word") {
+		t.Errorf("postgres conn string not URL-escaped: %q", got)
+	}
+}

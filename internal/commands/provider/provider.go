@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/fatih/color"
+	"github.com/iqbalmu/dbm/internal/providers"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )
@@ -32,8 +33,8 @@ func runList() {
 
 	// Prepare data
 	data := [][]any{
-		{"mysql", "8.0", 3306, "✓ Available"},
-		{"postgres", "16", 5432, "✓ Available"},
+		{"mysql", providers.DefaultMySQLVersion, providers.DefaultMySQLPort, "✓ Available"},
+		{"postgres", providers.DefaultPostgresVersion, providers.DefaultPostgresPort, "✓ Available"},
 	}
 
 	fmt.Println()
@@ -45,7 +46,7 @@ func runList() {
 
 	fmt.Println()
 
-	fmt.Println("Usage: dbm db create <name> --provider <provider>")
-	fmt.Println("Example: dbm db create mydb --provider mysql")
+	fmt.Println("Usage: dbm create <name> --provider <provider>")
+	fmt.Println("Example: dbm create mydb --provider mysql")
 	fmt.Println()
 }

@@ -4,6 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
+	"net/url"
+	"strconv"
 
 	_ "github.com/lib/pq"
 )
@@ -37,33 +40,48 @@ func (p *PostgresProvider) GetEnvVars(config *DBConfig) []string {
 }
 
 func (p *PostgresProvider) GetConnectionString(config *DBConfig) string {
-	return fmt.Sprintf("postgres://postgres:%s@%s:%d/%s?sslmode=disable",
-		config.RootPassword,
-		config.Host,
-		config.Port,
-		config.DatabaseName,
-	)
+	user, password := config.Auth("postgres")
+
+	u := url.URL{
+		Scheme: "postgres",
+		Host:   net.JoinHostPort(config.Host, strconv.Itoa(config.Port)),
+		Path:   "/" + config.DatabaseName,
+	}
+	u.User = url.UserPassword(user, password)
+	q := u.Query()
+	q.Set("sslmode", "disable")
+	u.RawQuery = q.Encode()
+	return u.String()
 }
 
 func (p *PostgresProvider) CreateDatabase(ctx context.Context, db *sql.DB, dbName string) error {
-	_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE %s", dbName))
+	_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE %s", QuoteIdentPG(dbName)))
 	return err
 }
 
 func (p *PostgresProvider) CreateUser(ctx context.Context, db *sql.DB, username, password, dbName string) error {
-	// Create user
+	user := QuoteIdentPG(username)
+
 	_, err := db.ExecContext(ctx, fmt.Sprintf(
-		"CREATE USER %s WITH PASSWORD '%s'",
-		username, password,
+		"CREATE USER %s WITH PASSWORD %s",
+		user, QuoteLiteralPG(password),
 	))
 	if err != nil {
 		return err
 	}
 
-	// Grant privileges
+	// PostgreSQL 15+ removed CREATE on schema public for non-owners. Making the
+	// user the database owner restores it via the pg_database_owner pseudo-role.
+	if _, err := db.ExecContext(ctx, fmt.Sprintf(
+		"ALTER DATABASE %s OWNER TO %s",
+		QuoteIdentPG(dbName), user,
+	)); err != nil {
+		return err
+	}
+
 	_, err = db.ExecContext(ctx, fmt.Sprintf(
 		"GRANT ALL PRIVILEGES ON DATABASE %s TO %s",
-		dbName, username,
+		QuoteIdentPG(dbName), user,
 	))
 	return err
 }

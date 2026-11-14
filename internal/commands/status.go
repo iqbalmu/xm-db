@@ -34,7 +34,7 @@ func runStatus() {
 	}
 
 	if len(databases) == 0 {
-		color.Yellow("No databases found. Create one with: dbm db create <name>")
+		color.Yellow("No databases found. Create one with: dbm create <name>")
 		return
 	}
 

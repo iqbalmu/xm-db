@@ -10,7 +10,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var removeForce bool
+var (
+	removeForce    bool
+	removeKeepData bool
+)
 
 var removeCmd = &cobra.Command{
 	Use:     "remove <name>",
@@ -24,6 +27,7 @@ var removeCmd = &cobra.Command{
 
 func init() {
 	removeCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal without confirmation")
+	removeCmd.Flags().BoolVar(&removeKeepData, "keep-data", false, "Keep the data volume (reused if the database is created again)")
 }
 
 func runRemove(name string) {
@@ -76,6 +80,19 @@ func runRemove(name string) {
 	color.White("  Removing container...")
 	if err := dockerMgr.RemoveContainer(ctx, db.ContainerID); err != nil {
 		color.Yellow("  Warning: Could not remove container: %v", err)
+	}
+
+	// Named volumes survive container removal (RemoveVolumes only deletes
+	// anonymous ones), so delete the data volume explicitly.
+	if db.VolumeName != "" {
+		if removeKeepData {
+			color.White("  Keeping data volume '%s' (--keep-data)", db.VolumeName)
+		} else {
+			color.White("  Removing data volume '%s'...", db.VolumeName)
+			if err := dockerMgr.RemoveVolume(ctx, db.VolumeName); err != nil {
+				color.Yellow("  Warning: Could not remove data volume: %v", err)
+			}
+		}
 	}
 
 	// Remove state

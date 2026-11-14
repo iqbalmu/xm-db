@@ -88,14 +88,21 @@ func runBackup(name string) {
 		}
 	}
 
-	output, err := dockerMgr.ExecCommand(ctx, db.ContainerID, cmd)
+	res, err := dockerMgr.Exec(ctx, db.ContainerID, cmd, "")
 	if err != nil {
 		color.Red("Error creating backup: %v", err)
 		return
 	}
+	if res.ExitCode != 0 {
+		color.Red("Error creating backup (exit %d):\n%s", res.ExitCode, res.Stderr)
+		return
+	}
+	if res.Stderr != "" {
+		color.Yellow("Warnings:\n%s", res.Stderr)
+	}
 
-	// Write to file
-	if err := os.WriteFile(absPath, []byte(output), 0644); err != nil {
+	// Write to file — owner-only, the dump contains database data.
+	if err := os.WriteFile(absPath, []byte(res.Stdout), 0o600); err != nil {
 		color.Red("Error writing backup file: %v", err)
 		return
 	}

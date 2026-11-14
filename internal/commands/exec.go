@@ -52,14 +52,9 @@ func runExec(name string) {
 	}
 
 	// Get provider
-	var prov providers.Provider
-	switch dbState.Provider {
-	case "mysql":
-		prov = providers.NewMySQLProvider()
-	case "postgres":
-		prov = providers.NewPostgresProvider()
-	default:
-		color.Red("Error: Unsupported provider")
+	prov, err := providers.For(dbState.Provider)
+	if err != nil {
+		color.Red("Error: %v", err)
 		return
 	}
 
@@ -72,7 +67,7 @@ func runExec(name string) {
 	}
 
 	connStr := prov.GetConnectionString(dbConfig)
-	db, err := sql.Open(utils.GetDriverName(dbState.Provider), connStr) // PAKAI UTILS
+	db, err := sql.Open(utils.GetDriverName(dbState.Provider), connStr)
 	if err != nil {
 		color.Red("Error connecting to database: %v", err)
 		return
