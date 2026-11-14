@@ -27,6 +27,9 @@ container ID.
 - **Interactive or scripted** — run `dbm create` with no arguments for guided
   setup, or pass flags for automation. Passwords are generated with `crypto/rand`.
 - **Lifecycle by name** — `start`, `stop`, `remove`, `logs`, `status`.
+- **Groups** — organize databases per project or organization. A database is
+  `global` by default; assign one at creation with `-g work`, then filter
+  views with `dbm list -g work`.
 - **SQL access** — `dbm exec --sql "..."` with table output, plus
   `dbm table list` / `dbm table describe`.
 - **Backup and restore** — `mysqldump`/`pg_dump` runs inside the container; the
@@ -79,9 +82,9 @@ dbm restore appdb ./dump.sql
 
 | Command | Description |
 |---|---|
-| `dbm create [name] [-p provider] [-v version] [--port N] [-i] [--volume=true]` | Create a database (interactive when no name given) |
-| `dbm list` | List all managed databases |
-| `dbm status` | Live status of all containers |
+| `dbm create [name] [-p provider] [-v version] [--port N] [-g group] [-i] [--volume=true]` | Create a database (interactive when no name given); `-g` assigns a group, default is global |
+| `dbm list [-g group\|global]` | List all managed databases, optionally filtered by group |
+| `dbm status [-g group\|global]` | Live status of all containers, optionally filtered by group |
 | `dbm start <name>` | Start a stopped database |
 | `dbm stop <name>` | Stop a running database |
 | `dbm remove <name> [-f] [--keep-data]` | Remove container and data volume (`--keep-data` keeps the volume) |
