@@ -175,7 +175,7 @@ func runCreate(args []string) bool {
 	}
 
 	dbConfig := &providers.DBConfig{
-		Host:         "localhost",
+		Host:         "127.0.0.1",
 		Port:         port,
 		RootPassword: rootPassword,
 		DatabaseName: dbName,
@@ -196,7 +196,7 @@ func runCreate(args []string) bool {
 	// Admin connection for readiness checks and user provisioning: the dev
 	// user does not exist until CreateUser runs.
 	adminConfig := &providers.DBConfig{
-		Host:         "localhost",
+		Host:         "127.0.0.1",
 		Port:         port,
 		RootPassword: rootPassword,
 		DatabaseName: dbName,

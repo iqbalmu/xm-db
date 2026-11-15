@@ -121,7 +121,7 @@ func runExecSQL(dbState *state.Database) {
 	}
 
 	db, err := prov.Connect(&providers.DBConfig{
-		Host:         "localhost",
+		Host:         "127.0.0.1",
 		Port:         dbState.Port,
 		RootPassword: dbState.RootPassword,
 		DatabaseName: dbState.DatabaseName,
