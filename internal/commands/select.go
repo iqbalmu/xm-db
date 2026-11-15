@@ -94,37 +94,6 @@ func selectOption(message string, options []string) (int, bool, error) {
 	}
 }
 
-// waitKey blocks until Enter or Esc is pressed; both mean "go back".
-// Ctrl+C leaves the wizard.
-func waitKey() error {
-	fd := int(os.Stdin.Fd())
-	if !term.IsTerminal(fd) {
-		fmt.Scanln()
-		return nil
-	}
-
-	state, err := term.MakeRaw(fd)
-	if err != nil {
-		fmt.Scanln()
-		return nil
-	}
-	defer term.Restore(fd, state)
-	setReadTimeout(fd)
-
-	for {
-		k, err := readKey()
-		if err != nil {
-			return err
-		}
-		switch k {
-		case keyEnter, keyEsc:
-			return nil
-		case keyInterrupt:
-			return errInterrupt
-		}
-	}
-}
-
 // key is a logical keypress.
 type key int
 

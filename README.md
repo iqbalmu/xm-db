@@ -21,7 +21,7 @@ container ID.
 ## Features
 
 - Interactive wizard: run `xmdb` with no arguments for a menu to pick an
-  action and a database. Every action returns to the menu until you exit.
+  action and a database; the action runs once and the program exits.
 - One-command create: pulls the image, creates a named volume, starts the
   container, waits for real protocol-level readiness, and provisions a dev user.
 - MySQL and PostgreSQL: provider abstraction handles engine differences

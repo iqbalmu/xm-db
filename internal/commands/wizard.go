@@ -1,9 +1,7 @@
 package commands
 
 import (
-	"errors"
 	"fmt"
-	"os"
 
 	"github.com/fatih/color"
 	"github.com/iqbalmu/xm-db/internal/state"
@@ -15,7 +13,9 @@ type wizardAction struct {
 }
 
 // runWizard is the interactive menu shown by `xmdb` with no arguments.
-// Esc backs out of any menu (at the top menu it exits), Ctrl+C exits too.
+// One pass: pick an action (and optionally a database), run it, and the
+// program exits. Esc backs out of any menu (at the top menu it exits),
+// Ctrl+C exits too.
 func runWizard() {
 	groups := []wizardGroup{
 		{
@@ -45,24 +45,22 @@ func runWizard() {
 	}
 	topOptions = append(topOptions, "Command overview", "Exit")
 
-	for {
-		choice, ok := promptSelect("What do you want to do?", topOptions)
-		if !ok || choice == "Exit" {
-			fmt.Println()
+	// One pass: pick an action, run it, and the program exits.
+	choice, ok := promptSelect("What do you want to do?", topOptions)
+	if !ok || choice == "Exit" {
+		fmt.Println()
+		return
+	}
+
+	if choice == "Command overview" {
+		showOverview()
+		return
+	}
+
+	for _, g := range groups {
+		if g.label == choice {
+			runGroupMenu(g)
 			return
-		}
-
-		if choice == "Command overview" {
-			showOverview()
-			waitForEnter()
-			continue
-		}
-
-		for _, g := range groups {
-			if g.label == choice {
-				runGroupMenu(g)
-				break
-			}
 		}
 	}
 }
@@ -72,6 +70,8 @@ type wizardGroup struct {
 	actions []wizardAction
 }
 
+// runGroupMenu shows one group's actions; the chosen action runs once and
+// the wizard ends. Esc or Back just skips the action.
 func runGroupMenu(group wizardGroup) {
 	options := make([]string, 0, len(group.actions)+1)
 	for _, a := range group.actions {
@@ -79,18 +79,15 @@ func runGroupMenu(group wizardGroup) {
 	}
 	options = append(options, "Back")
 
-	for {
-		choice, ok := promptSelect(group.label, options)
-		if !ok || choice == "Back" {
-			return
-		}
+	choice, ok := promptSelect(group.label, options)
+	if !ok || choice == "Back" {
+		return
+	}
 
-		for _, a := range group.actions {
-			if a.label == choice {
-				a.run()
-				waitForEnter()
-				break
-			}
+	for _, a := range group.actions {
+		if a.label == choice {
+			a.run()
+			return
 		}
 	}
 }
@@ -101,20 +98,6 @@ func pickAndRun(question string, fn func(string)) func() {
 			fn(name)
 		}
 	}
-}
-
-// waitForEnter pauses until the user presses Enter or Esc; both go back to
-// the menu, Ctrl+C leaves the wizard.
-func waitForEnter() {
-	fmt.Println("\nPress Enter or Esc to return to the menu...")
-	if err := waitKey(); err != nil {
-		if errors.Is(err, errInterrupt) {
-			fmt.Println()
-			os.Exit(130)
-		}
-		color.Red("Error: %v", err)
-	}
-	fmt.Print("\x1b[1A\r\x1b[2K\x1b[1A\r\x1b[2K")
 }
 
 // pickDatabase shows a selector over the managed databases and returns the
