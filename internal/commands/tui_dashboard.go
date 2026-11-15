@@ -538,11 +538,11 @@ func (m dashboardModel) layoutDimensions() (stacked bool, leftW, leftH, rightW, 
 	if m.width < 80 {
 		stacked = true
 		w := max(30, m.width-2)
-		leftH = max(6, bodyH*40/100)
+		leftH = max(5, bodyH*32/100)
 		rightH = max(8, bodyH-leftH-2)
 		return true, w, leftH, w, rightH
 	}
-	leftW = max(32, m.width*38/100)
+	leftW = min(38, max(26, m.width*26/100))
 	rightW = max(36, m.width-leftW-4)
 	return false, leftW, bodyH, rightW, bodyH
 }
