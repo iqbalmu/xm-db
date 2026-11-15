@@ -360,23 +360,17 @@ func promptCreate(
 				defaultPort = createPort
 			}
 
-			// Make the port choice obvious: list what is taken and suggest
-			// the next free port when the default is busy.
-			if summary := managedPortSummary(stateMgr); summary != "" {
-				color.Yellow("Ports already used by managed databases: %s", summary)
-			}
 			suggest := defaultPort
-			note := ""
 			if managedPortOwner(stateMgr, defaultPort) != "" || portInUse(defaultPort) {
 				suggest = nextFreePort(stateMgr, defaultPort)
-				note = fmt.Sprintf(" (%d is busy)", defaultPort)
 			}
+			showPortAvailability(stateMgr, defaultPort, suggest)
 
 			def := strconv.Itoa(suggest)
 			if *port != 0 {
 				def = strconv.Itoa(*port)
 			}
-			portStr, ok, err := askText(fmt.Sprintf("Port%s:", note), def, false, portValidator(stateMgr))
+			portStr, ok, err := askText("Port:", def, false, portValidator(stateMgr))
 			if err != nil {
 				color.Red("Error: %v", err)
 				return true
@@ -593,19 +587,33 @@ func requiredText(s string) error {
 	return nil
 }
 
-// managedPortSummary lists the ports held by managed databases with their
-// names, e.g. "3306 (app), 5432 (analytics)".
-func managedPortSummary(m *state.Manager) string {
-	dbs, err := m.List()
-	if err != nil {
-		return ""
+// showPortAvailability prints the tidy port block shown before the port
+// prompt: which ports the managed databases hold and which port is free.
+func showPortAvailability(m *state.Manager, defaultPort, suggest int) {
+	fmt.Println()
+	color.Cyan("  Port availability")
+	for _, row := range portAvailabilityRows(m, defaultPort, suggest) {
+		fmt.Printf("  %s\n", row)
 	}
-	sort.Slice(dbs, func(i, j int) bool { return dbs[i].Port < dbs[j].Port })
-	parts := make([]string, 0, len(dbs))
-	for _, d := range dbs {
-		parts = append(parts, fmt.Sprintf("%d (%s)", d.Port, d.Name))
+	fmt.Println()
+}
+
+// portAvailabilityRows builds the aligned rows of that block.
+func portAvailabilityRows(m *state.Manager, defaultPort, suggest int) []string {
+	var rows []string
+	seen := map[int]bool{}
+	if dbs, err := m.List(); err == nil {
+		sort.Slice(dbs, func(i, j int) bool { return dbs[i].Port < dbs[j].Port })
+		for _, d := range dbs {
+			rows = append(rows, fmt.Sprintf("%5d  %-6s  managed database '%s'", d.Port, "in use", d.Name))
+			seen[d.Port] = true
+		}
 	}
-	return strings.Join(parts, ", ")
+	if defaultPort != suggest && !seen[defaultPort] && portInUse(defaultPort) {
+		rows = append(rows, fmt.Sprintf("%5d  %-6s  another process", defaultPort, "in use"))
+	}
+	rows = append(rows, fmt.Sprintf("%5d  %-6s  suggested", suggest, "free"))
+	return rows
 }
 
 // nextFreePort returns the first port from start upward that no managed

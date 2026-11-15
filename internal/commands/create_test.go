@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"net"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -120,7 +122,7 @@ func TestNextFreePortSkipsManaged(t *testing.T) {
 	}
 }
 
-func TestManagedPortSummary(t *testing.T) {
+func TestPortAvailabilityRows(t *testing.T) {
 	m := newTestStateManager(t)
 	for _, db := range []*state.Database{
 		{Name: "analytics", Port: 5432},
@@ -131,8 +133,38 @@ func TestManagedPortSummary(t *testing.T) {
 		}
 	}
 
-	want := "3306 (app), 5432 (analytics)"
-	if got := managedPortSummary(m); got != want {
-		t.Errorf("managedPortSummary = %q, want %q", got, want)
+	// Suggested port is free and equals the default: no extra row.
+	rows := portAvailabilityRows(m, 3307, 3307)
+	want := []string{
+		"  3306  in use  managed database 'app'",
+		"  5432  in use  managed database 'analytics'",
+		"  3307  free    suggested",
+	}
+	if len(rows) != len(want) {
+		t.Fatalf("rows = %v, want %v", rows, want)
+	}
+	for i := range want {
+		if rows[i] != want[i] {
+			t.Errorf("row %d = %q, want %q", i, rows[i], want[i])
+		}
+	}
+
+	// A default port held by a non-managed listener gets its own row.
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("Listen: %v", err)
+	}
+	defer listener.Close()
+	busy := listener.Addr().(*net.TCPAddr).Port
+
+	rows = portAvailabilityRows(m, busy, busy+1)
+	found := false
+	for _, r := range rows {
+		if strings.Contains(r, "another process") && strings.Contains(r, strconv.Itoa(busy)) {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("rows missing 'another process' row for busy port %d: %v", busy, rows)
 	}
 }
