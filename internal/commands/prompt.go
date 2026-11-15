@@ -201,8 +201,10 @@ func promptKey() (key, byte, error) {
 	}
 }
 
-// drawInput renders the prompt line in place.
+// drawInput renders the prompt line in place. A trailing colon in the
+// message is dropped: the renderer adds its own ": " separator.
 func drawInput(message, value string, hidden bool) {
+	message = strings.TrimRight(message, ": ")
 	fmt.Printf("\r\x1b[2K? %s: %s", message, maskInput(value, hidden))
 }
 
