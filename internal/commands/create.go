@@ -561,13 +561,19 @@ func nextFreePort(m *state.Manager, start int) int {
 	return start
 }
 
-// chooseVersion lets the user pick one of the known Docker tags or enter any
-// other tag manually.
+// chooseVersion lets the user pick one of the known Docker tags (newest
+// first; the configured default is pre-highlighted) or enter any other tag
+// manually.
 func chooseVersion(provider string) (string, bool) {
 	options := providers.KnownVersions(provider)
 	options = append(options, "Type a version manually")
 
-	choice, ok := promptSelect("Database version:", options)
+	def := providers.DefaultMySQLVersion
+	if provider == utils.ProviderPostgres {
+		def = providers.DefaultPostgresVersion
+	}
+
+	choice, ok := promptSelectDefault("Database version:", options, def)
 	if !ok {
 		return "", false
 	}

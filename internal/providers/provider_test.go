@@ -5,6 +5,26 @@ import (
 	"testing"
 )
 
+func TestKnownVersionsNewestFirst(t *testing.T) {
+	wantPG := []string{"18", "17", "16", "15", "14"}
+	if got := KnownVersions("postgres"); !reflect.DeepEqual(got, wantPG) {
+		t.Errorf("postgres versions = %v, want %v (newest first)", got, wantPG)
+	}
+
+	wantMySQL := []string{"9.0", "8.4", "8.0"}
+	if got := KnownVersions("mysql"); !reflect.DeepEqual(got, wantMySQL) {
+		t.Errorf("mysql versions = %v, want %v (newest first)", got, wantMySQL)
+	}
+
+	// The configured defaults must stay selectable in the picker.
+	for _, v := range KnownVersions("postgres") {
+		if v == DefaultPostgresVersion {
+			return
+		}
+	}
+	t.Errorf("postgres default %q missing from KnownVersions", DefaultPostgresVersion)
+}
+
 func TestGetImageName(t *testing.T) {
 	if got := NewMySQLProvider().GetImageName(""); got != "mysql:8.0" {
 		t.Errorf("mysql default image = %q, want mysql:8.0", got)

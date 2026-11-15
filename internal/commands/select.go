@@ -22,7 +22,21 @@ const fallbackWidth = 80
 // chosen option. It returns false when the user pressed Esc (back/cancel);
 // Ctrl+C leaves the wizard.
 func promptSelect(message string, options []string) (string, bool) {
-	idx, ok, err := selectOption(message, options)
+	return promptSelectDefault(message, options, "")
+}
+
+// promptSelectDefault is promptSelect with one option pre-highlighted
+// (matched by text); an empty or missing def highlights the first option.
+func promptSelectDefault(message string, options []string, def string) (string, bool) {
+	initial := 0
+	for i, o := range options {
+		if o == def {
+			initial = i
+			break
+		}
+	}
+
+	idx, ok, err := selectOption(message, options, initial)
 	if err != nil {
 		if errors.Is(err, errInterrupt) {
 			fmt.Println()
@@ -37,23 +51,26 @@ func promptSelect(message string, options []string) (string, bool) {
 	return options[idx], true
 }
 
-// selectOption renders the selector and returns the chosen index.
-// Esc yields ok=false, Ctrl+C yields errInterrupt.
-func selectOption(message string, options []string) (int, bool, error) {
+// selectOption renders the selector and returns the chosen index. Esc yields
+// ok=false, Ctrl+C yields errInterrupt. initial is the pre-highlighted index.
+func selectOption(message string, options []string, initial int) (int, bool, error) {
 	fd := int(os.Stdin.Fd())
 	if !term.IsTerminal(fd) {
-		return fallbackSelect(message, options)
+		return fallbackSelect(message, options, initial)
 	}
 
 	state, err := term.MakeRaw(fd)
 	if err != nil {
-		return fallbackSelect(message, options)
+		return fallbackSelect(message, options, initial)
 	}
 	defer term.Restore(fd, state)
 	setReadTimeout(fd)
 
 	width := termWidth(fd)
-	sel := 0
+	sel := initial
+	if sel < 0 || sel >= len(options) {
+		sel = 0
+	}
 	renderSelect(message, options, sel, width, false)
 
 	for {
@@ -174,11 +191,12 @@ func drainInput() {
 
 // fallbackSelect keeps the survey behavior for non-tty stdin, where raw
 // mode is not available.
-func fallbackSelect(message string, options []string) (int, bool, error) {
+func fallbackSelect(message string, options []string, initial int) (int, bool, error) {
 	var choice string
 	prompt := &survey.Select{
 		Message: message,
 		Options: options,
+		Default: options[initial],
 	}
 	if err := survey.AskOne(prompt, &choice); err != nil {
 		if err == terminal.InterruptErr {
