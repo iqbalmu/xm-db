@@ -193,7 +193,9 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.step--
-			if m.step == stepUsername && !m.createUser {
+			if m.step == stepUserPassword && !m.createUser {
+				m.step = stepAskUser
+			} else if m.step == stepUsername && !m.createUser {
 				m.step = stepAskUser
 			}
 			m.prepareStep()
@@ -344,8 +346,9 @@ func (m createModel) handleEnter() (tea.Model, tea.Cmd) {
 		if !m.createUser {
 			m.username = ""
 			m.userPassword = ""
-			m.done = true
-			return m, tea.Quit
+			m.step = stepReview
+			m.prepareStep()
+			return m, nil
 		}
 		if m.username == "" {
 			m.username = defaultUsername
@@ -377,6 +380,10 @@ func (m createModel) handleEnter() (tea.Model, tea.Cmd) {
 			val = gen
 		}
 		m.userPassword = val
+		m.step = stepReview
+		m.prepareStep()
+
+	case stepReview:
 		m.done = true
 		return m, tea.Quit
 	}
@@ -388,70 +395,149 @@ func (m createModel) View() string {
 	if m.done || m.quit {
 		return ""
 	}
-
-	var b strings.Builder
-	title := styleHeader.Render(" xm-db — Create New Database ")
-	b.WriteString(title + "\n\n")
-
-	// Show summary of already-chosen values
-	var summary []string
-	if m.dbName != "" && m.step > stepName {
-		summary = append(summary, fmt.Sprintf("Name: %s", m.dbName))
-	}
-	if m.step > stepProvider {
-		summary = append(summary, fmt.Sprintf("Provider: %s", m.provider))
-	}
-	if m.version != "" && m.step > stepVersion {
-		summary = append(summary, fmt.Sprintf("Version: %s", m.version))
-	}
-	if m.port != 0 && m.step > stepPort {
-		summary = append(summary, fmt.Sprintf("Port: %d", m.port))
-	}
-	if m.step > stepGroup {
-		summary = append(summary, fmt.Sprintf("Group: %s", groupLabel(m.group)))
-	}
-	if len(summary) > 0 {
-		b.WriteString(styleMutedText.Render("  "+strings.Join(summary, "  •  ")) + "\n\n")
-	}
-
-	promptTitle := m.stepPromptTitle()
-	b.WriteString("  " + lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(promptTitle) + "\n")
-
-	if len(m.portHints) > 0 {
-		b.WriteString("\n")
-		for _, line := range m.portHints {
-			b.WriteString(styleMutedText.Render("    "+line) + "\n")
-		}
-	}
-
-	b.WriteString("\n")
-	if m.isSelectStep() {
-		for i, opt := range m.options {
-			if i == m.cursor {
-				b.WriteString("  " + styleSelectedRow.Render(" ❯ "+opt+" ") + "\n")
-			} else {
-				b.WriteString("    " + opt + "\n")
-			}
-		}
-	} else {
-		b.WriteString("  " + m.input.View() + "\n")
-	}
-
-	if m.validationErr != "" {
-		b.WriteString("\n  " + styleErrorText.Render("✗ "+m.validationErr) + "\n")
-	}
-
-	help := "Enter: confirm  •  Esc: back/cancel  •  Ctrl+C: quit"
-	if m.isSelectStep() {
-		help = "↑/↓: select  •  " + help
-	}
-	b.WriteString("\n" + styleHelpBar.Render("  "+help) + "\n")
-
 	boxWidth := 68
 	if m.width > 4 && m.width-4 < boxWidth {
 		boxWidth = m.width - 4
 	}
-	return stylePaneFocused.Width(boxWidth).Render(b.String()) + "\n"
+	return styleModal.Width(boxWidth).Render(m.ViewContent(boxWidth-6)) + "\n"
+}
+
+func (m createModel) stepProgress() (int, int) {
+	total := 8
+	if m.createUser {
+		total = 10
+	}
+	cur := m.step + 1
+	if !m.createUser && m.step == stepReview {
+		cur = total
+	}
+	if cur > total {
+		cur = total
+	}
+	return cur, total
+}
+
+func (m createModel) renderSummaryGrid(innerWidth int) string {
+	var pairs [][2]string
+	if m.dbName != "" && m.step > stepName {
+		pairs = append(pairs, [2]string{"Name", m.dbName})
+	}
+	if m.step > stepProvider {
+		pairs = append(pairs, [2]string{"Provider", m.provider})
+	}
+	if m.version != "" && m.step > stepVersion {
+		pairs = append(pairs, [2]string{"Version", m.version})
+	}
+	if m.port != 0 && m.step > stepPort {
+		pairs = append(pairs, [2]string{"Port", fmt.Sprintf("127.0.0.1:%d", m.port)})
+	}
+	if m.step > stepGroup {
+		pairs = append(pairs, [2]string{"Group", groupLabel(m.group)})
+	}
+	if m.step > stepRootPassword {
+		pairs = append(pairs, [2]string{"Root Pass", "••••••••"})
+	}
+	if m.step > stepAskUser {
+		if m.createUser {
+			u := m.username
+			if u == "" {
+				u = defaultUsername
+			}
+			pairs = append(pairs, [2]string{"Dev User", u})
+		} else {
+			pairs = append(pairs, [2]string{"Dev User", "(none)"})
+		}
+	}
+	if len(pairs) == 0 {
+		return ""
+	}
+
+	colW := max(22, innerWidth/2-1)
+	keyStyle := lipgloss.NewStyle().Foreground(colorMuted).Width(10)
+	valStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("15"))
+
+	var rows []string
+	for i := 0; i < len(pairs); i += 2 {
+		left := lipgloss.NewStyle().Width(colW).Render(keyStyle.Render(pairs[i][0]+":") + valStyle.Render(pairs[i][1]))
+		right := ""
+		if i+1 < len(pairs) {
+			right = lipgloss.NewStyle().Width(colW).Render(keyStyle.Render(pairs[i+1][0]+":") + valStyle.Render(pairs[i+1][1]))
+		}
+		rows = append(rows, lipgloss.JoinHorizontal(lipgloss.Top, left, right))
+	}
+
+	card := lipgloss.NewStyle().
+		Border(lipgloss.NormalBorder()).
+		BorderForeground(colorSubtle).
+		Padding(0, 1).
+		Width(max(30, innerWidth-2)).
+		Render(strings.Join(rows, "\n"))
+	return card
+}
+
+// ViewContent renders the create wizard body without an outer border so it can
+// be embedded cleanly inside a modal container.
+func (m createModel) ViewContent(innerWidth int) string {
+	if m.done || m.quit {
+		return ""
+	}
+	if innerWidth < 36 {
+		innerWidth = 60
+	}
+
+	cur, total := m.stepProgress()
+	dots := strings.Repeat("●", cur) + strings.Repeat("○", max(0, total-cur))
+	stepBadge := styleMutedText.Render(fmt.Sprintf("Step %d/%d  %s", cur, total, dots))
+	title := styleModalTitle.Render("Create New Database")
+	gap := max(2, innerWidth-lipgloss.Width(title)-lipgloss.Width(stepBadge))
+
+	var b strings.Builder
+	b.WriteString(title + strings.Repeat(" ", gap) + stepBadge + "\n\n")
+
+	if grid := m.renderSummaryGrid(innerWidth); grid != "" {
+		b.WriteString(grid + "\n\n")
+	}
+
+	promptTitle := m.stepPromptTitle()
+	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Render(promptTitle) + "\n")
+
+	if m.step == stepReview {
+		b.WriteString("\n" + styleBadgeRun.Render("Ready to provision container and initialize database.") + "\n")
+	} else {
+		if len(m.portHints) > 0 {
+			b.WriteString("\n")
+			for _, line := range m.portHints {
+				b.WriteString(styleMutedText.Render("  "+line) + "\n")
+			}
+		}
+
+		b.WriteString("\n")
+		if m.isSelectStep() {
+			for i, opt := range m.options {
+				if i == m.cursor {
+					b.WriteString(styleSelectedRow.Width(max(20, innerWidth-2)).Render(" ▸ "+opt) + "\n")
+				} else {
+					b.WriteString("   " + opt + "\n")
+				}
+			}
+		} else {
+			b.WriteString(m.input.View() + "\n")
+		}
+	}
+
+	if m.validationErr != "" {
+		b.WriteString("\n" + styleErrorText.Render("✗ "+m.validationErr) + "\n")
+	}
+
+	help := "Enter: confirm  •  Esc: back/cancel"
+	if m.step == stepReview {
+		help = "Enter: create database  •  Esc: back"
+	} else if m.isSelectStep() {
+		help = "↑/↓: select  •  " + help
+	}
+	b.WriteString("\n" + styleMutedText.Render(help))
+
+	return b.String()
 }
 
 func (m createModel) stepPromptTitle() string {
@@ -480,6 +566,8 @@ func (m createModel) stepPromptTitle() string {
 		return fmt.Sprintf("Dev username (default %s):", defaultUsername)
 	case stepUserPassword:
 		return fmt.Sprintf("Password for '%s':", m.username)
+	case stepReview:
+		return "Review configuration:"
 	}
 	return ""
 }

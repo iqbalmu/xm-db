@@ -320,6 +320,7 @@ const (
 	stepAskUser
 	stepUsername
 	stepUserPassword
+	stepReview
 	stepDone
 )
 

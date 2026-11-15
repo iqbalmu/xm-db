@@ -1298,7 +1298,8 @@ func (m dashboardModel) View() string {
 		return renderOverlay(base, renderRestoreModal(name, m.restoreState, m.width), m.width, m.height)
 	case modalCreate:
 		if m.createWizard != nil {
-			box := styleModal.Width(min(74, max(48, m.width-6))).Render(m.createWizard.View())
+			w := min(74, max(48, m.width-6))
+			box := styleModal.Width(w).Render(m.createWizard.ViewContent(w - 6))
 			return renderOverlay(base, box, m.width, m.height)
 		}
 	}
