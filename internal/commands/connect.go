@@ -82,7 +82,7 @@ func runConnect(name string) {
 		fmt.Printf("DB_PASSWORD=%s\n", db.GetPassword())
 
 	default:
-		color.Cyan("\n🔗 Connection Information for '%s':\n", name)
+		color.Cyan("\nConnection Information for '%s':\n", name)
 		fmt.Println(color.CyanString("════════════════════════════════════════"))
 
 		labelColor := color.New(color.FgWhite, color.Bold)

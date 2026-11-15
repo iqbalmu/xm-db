@@ -4,12 +4,21 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io"
+	"log"
 	"net"
 	"strconv"
 	"time"
 
 	"github.com/go-sql-driver/mysql"
 )
+
+func init() {
+	// The driver logs every protocol hiccup (e.g. each failed readiness poll
+	// against a still-initializing server) straight to stderr. The CLI reports
+	// its own errors, so drop the chatter.
+	mysql.SetLogger(log.New(io.Discard, "", 0))
+}
 
 type MySQLProvider struct{}
 

@@ -70,7 +70,7 @@ func runRestore(name, backupFile string) {
 	if !restoreForce {
 		var confirm bool
 		prompt := &survey.Confirm{
-			Message: color.YellowString("⚠️  This will replace all data in database '%s'. Continue?", name),
+			Message: color.YellowString("WARNING: This will replace all data in database '%s'. Continue?", name),
 			Default: false,
 		}
 		if err := survey.AskOne(prompt, &confirm); err != nil {
@@ -91,7 +91,7 @@ func runRestore(name, backupFile string) {
 	}
 	defer sqlFile.Close()
 
-	color.Cyan("\n📥 Restoring database '%s' from backup...\n", name)
+	color.Cyan("\nRestoring database '%s' from backup...\n", name)
 
 	var cmd []string
 	if db.Provider == utils.ProviderMySQL {
@@ -128,7 +128,7 @@ func runRestore(name, backupFile string) {
 	fileInfo, _ := os.Stat(absPath)
 	size := float64(fileInfo.Size()) / 1024 / 1024 // MB
 
-	color.Green("\n✓ Database restored successfully!\n")
+	color.Green("\nDatabase restored successfully!\n")
 	color.Cyan("  File: %s", absPath)
 	color.Cyan("  Size: %.2f MB", size)
 	fmt.Println()

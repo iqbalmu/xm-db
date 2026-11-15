@@ -45,12 +45,12 @@ func runStop(name string) {
 		return
 	}
 
-	color.Cyan("⏸️  Stopping database '%s'...", name)
+	color.Cyan("Stopping database '%s'...", name)
 
 	if err := dockerMgr.StopContainer(ctx, db.ContainerID, db.ContainerName); err != nil {
 		color.Red("Error stopping container: %v", err)
 		return
 	}
 
-	color.Green("✓ Database '%s' stopped successfully", name)
+	color.Green("Database '%s' stopped successfully", name)
 }

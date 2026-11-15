@@ -77,7 +77,7 @@ func runDescribe(dbName, tableName string) {
 	}
 	defer rows.Close()
 
-	color.Cyan("\n📊 Table Structure: %s.%s\n", dbName, tableName)
+	color.Cyan("\nTable Structure: %s.%s\n", dbName, tableName)
 
 	var data [][]any
 	table := tablewriter.NewTable(os.Stdout)

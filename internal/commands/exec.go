@@ -249,7 +249,7 @@ func printQueryRows(rows *sql.Rows) {
 }
 
 func printExecResult(res sql.Result) {
-	color.Green("\n✓ Statement executed successfully")
+	color.Green("\nStatement executed successfully")
 
 	if affected, err := res.RowsAffected(); err == nil {
 		fmt.Printf("  Rows affected: %d\n\n", affected)

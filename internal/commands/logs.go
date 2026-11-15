@@ -52,7 +52,7 @@ func runLogs(name string) {
 
 	ctx := context.Background()
 
-	color.Cyan("📋 Logs for '%s':\n", name)
+	color.Cyan("Logs for '%s':\n", name)
 	fmt.Println(color.CyanString("════════════════════════════════════════"))
 
 	logs, err := dockerMgr.GetContainerLogs(ctx, db.ContainerID, db.ContainerName, logsTail, logsFollow)

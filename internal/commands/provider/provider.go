@@ -29,7 +29,7 @@ func init() {
 
 func runList() {
 	titleColor := color.New(color.FgCyan, color.Bold)
-	titleColor.Println("\n📦 Supported Database Providers:")
+	titleColor.Println("\nSupported Database Providers:")
 
 	data := [][]any{
 		{"mysql", providers.DefaultMySQLVersion, providers.DefaultMySQLPort},

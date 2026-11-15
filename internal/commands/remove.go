@@ -66,7 +66,7 @@ func runRemove(name string) {
 
 	ctx := context.Background()
 
-	color.Cyan("🗑️  Removing database '%s'...", name)
+	color.Cyan("Removing database '%s'...", name)
 
 	running, _ := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if running {
@@ -97,5 +97,5 @@ func runRemove(name string) {
 		return
 	}
 
-	color.Green("✓ Database '%s' removed successfully", name)
+	color.Green("Database '%s' removed successfully", name)
 }

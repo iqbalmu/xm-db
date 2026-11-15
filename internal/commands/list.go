@@ -65,7 +65,7 @@ func runList() {
 
 	ctx := context.Background()
 
-	color.Cyan("\n📊 Managed Databases:\n")
+	color.Cyan("\nManaged Databases:\n")
 
 	var data [][]any
 	for _, db := range databases {

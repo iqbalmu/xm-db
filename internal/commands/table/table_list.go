@@ -67,7 +67,7 @@ func runList(name string) {
 		return
 	}
 
-	color.Cyan("\n📋 Tables in '%s':\n", name)
+	color.Cyan("\nTables in '%s':\n", name)
 	for i, table := range tables {
 		fmt.Printf("  %d. %s\n", i+1, table)
 	}

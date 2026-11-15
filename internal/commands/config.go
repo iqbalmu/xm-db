@@ -45,7 +45,7 @@ func init() {
 
 func runConfigInit() {
 	if config.Exists() {
-		color.Yellow("⚠️  Configuration file already exists")
+		color.Yellow("Configuration file already exists")
 		path, _ := config.GetConfigPath()
 		fmt.Printf("Path: %s\n", path)
 		fmt.Println("\nUse 'xmdb config show' to view current configuration")
@@ -59,7 +59,7 @@ func runConfigInit() {
 	}
 
 	path, _ := config.GetConfigPath()
-	color.Green("\n✓ Configuration file created successfully!")
+	color.Green("\nConfiguration file created successfully!")
 	color.Cyan("  Path: %s", path)
 	fmt.Println("\nDefault settings:")
 	displayConfig(cfg)
@@ -72,7 +72,7 @@ func runConfigShow() {
 		return
 	}
 
-	color.Cyan("\n📋 Current Configuration:\n")
+	color.Cyan("\nCurrent Configuration:\n")
 	fmt.Println(color.CyanString("════════════════════════════════════════"))
 	displayConfig(cfg)
 }
@@ -87,7 +87,7 @@ func runConfigPath() {
 	fmt.Println(path)
 
 	if !config.Exists() {
-		color.Yellow("\n⚠️  Configuration file does not exist yet")
+		color.Yellow("\nConfiguration file does not exist yet")
 		fmt.Println("Run 'xmdb config init' to create it")
 	}
 }

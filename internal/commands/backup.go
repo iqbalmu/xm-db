@@ -67,7 +67,7 @@ func runBackup(name string) {
 		return
 	}
 
-	color.Cyan("\n💾 Creating backup for '%s'...\n", name)
+	color.Cyan("\nCreating backup for '%s'...\n", name)
 
 	var cmd []string
 	if db.Provider == utils.ProviderMySQL {
@@ -112,7 +112,7 @@ func runBackup(name string) {
 	fileInfo, _ := os.Stat(absPath)
 	size := float64(fileInfo.Size()) / 1024 / 1024 // MB
 
-	color.Green("\n✓ Backup created successfully!\n")
+	color.Green("\nBackup created successfully!\n")
 	color.Cyan("  File: %s", absPath)
 	color.Cyan("  Size: %.2f MB", size)
 	fmt.Println()

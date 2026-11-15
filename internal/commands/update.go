@@ -222,7 +222,7 @@ func runUpdate() {
 	}
 
 	base := updateBase()
-	color.Cyan("\n⬆️  Checking for updates…\n")
+	color.Cyan("\nChecking for updates…\n")
 
 	tag, err := latestTag(base)
 	if err != nil {
@@ -328,6 +328,6 @@ func runUpdate() {
 		}
 	}
 
-	color.Green("\n✓ Updated: %s → %s", Version, strings.TrimPrefix(tag, "v"))
+	color.Green("\nUpdated: %s -> %s", Version, strings.TrimPrefix(tag, "v"))
 	fmt.Println("   Run `xmdb version` to confirm.")
 }

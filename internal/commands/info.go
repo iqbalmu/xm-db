@@ -52,7 +52,7 @@ func runInfo(name string) {
 	valueColor := color.New(color.FgWhite)
 
 	fmt.Println()
-	titleColor.Printf("📊 Database Information: %s\n", name)
+	titleColor.Printf("Database Information: %s\n", name)
 	fmt.Println(color.CyanString("═══════════════════════════════════════"))
 
 	fmt.Println()

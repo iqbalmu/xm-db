@@ -227,7 +227,7 @@ func runCreate(args []string) {
 		return
 	}
 
-	color.Cyan("\n⏳ Creating %s database '%s'...\n", provider, dbName)
+	color.Cyan("\nCreating %s database '%s'...\n", provider, dbName)
 
 	ctx := context.Background()
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
@@ -237,7 +237,7 @@ func runCreate(args []string) {
 	}
 
 	imageName := prov.GetImageName(version)
-	color.White("📥 Pulling image %s...", imageName)
+	color.White("Pulling image %s...", imageName)
 	if err := dockerMgr.PullImage(ctx, imageName); err != nil {
 		color.Red("Error pulling image: %v", err)
 		return
@@ -293,14 +293,14 @@ func runCreate(args []string) {
 		DatabaseName: dbName,
 	}
 
-	color.White("🐳 Creating container...")
+	color.White("Creating container...")
 	containerID, err := dockerMgr.CreateContainer(ctx, containerConfig)
 	if err != nil {
 		color.Red("Error creating container: %v", err)
 		return
 	}
 
-	color.White("▶️  Starting container...")
+	color.White("Starting container...")
 	if err := dockerMgr.StartContainer(ctx, containerID, containerName); err != nil {
 		color.Red("Error starting container: %v", err)
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
@@ -310,7 +310,7 @@ func runCreate(args []string) {
 	// Wait until the server answers a real protocol handshake. Rootless
 	// container runtimes accept host-side TCP connections before the database
 	// listens, so a bare port dial is not proof of readiness.
-	color.White("⏳ Waiting for database to accept connections...")
+	color.White("Waiting for database to accept connections...")
 	if err := waitForDatabase(ctx, prov, adminConfig, containerStartTimeout); err != nil {
 		color.Red("Error: %v", err)
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
@@ -320,7 +320,7 @@ func runCreate(args []string) {
 	// Create user if requested. Fail hard instead of saving credentials that
 	// do not exist.
 	if createUser && username != "" {
-		color.White("👤 Creating user '%s'...", username)
+		color.White("Creating user '%s'...", username)
 
 		db, err := prov.Connect(adminConfig)
 		if err != nil {
@@ -359,7 +359,7 @@ func runCreate(args []string) {
 		return
 	}
 
-	color.Green("\n✓ Database '%s' created successfully!\n", dbName)
+	color.Green("\nDatabase '%s' created successfully!\n", dbName)
 
 	fmt.Println("Connection Information:")
 	color.Cyan("  Provider: %s", provider)

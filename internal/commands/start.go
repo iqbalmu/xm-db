@@ -50,12 +50,12 @@ func runStart(name string) {
 		return
 	}
 
-	color.Cyan("▶️  Starting database '%s'...", name)
+	color.Cyan("Starting database '%s'...", name)
 
 	if err := dockerMgr.StartContainer(ctx, db.ContainerID, db.ContainerName); err != nil {
 		color.Red("Error starting container: %v", err)
 		return
 	}
 
-	color.Green("✓ Database '%s' started successfully", name)
+	color.Green("Database '%s' started successfully", name)
 }
