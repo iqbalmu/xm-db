@@ -20,8 +20,8 @@ var backupCmd = &cobra.Command{
 	Use:   "backup <name>",
 	Short: "Backup database to SQL file",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		runBackup(args[0])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runBackup(args[0])
 	},
 }
 
@@ -29,31 +29,27 @@ func init() {
 	backupCmd.Flags().StringVarP(&backupOutput, "output", "o", "", "Output file path (default: ./backup_<name>_<timestamp>.sql)")
 }
 
-func runBackup(name string) {
+func runBackup(name string) error {
 	stateMgr, err := state.NewManager()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	db, err := stateMgr.Load(name)
 	if err != nil {
-		color.Red("Error: Database '%s' not found", name)
-		return
+		return fmt.Errorf("database '%s' not found", name)
 	}
 
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	ctx := context.Background()
 
 	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if err != nil || !running {
-		color.Red("Error: Database '%s' is not running", name)
-		return
+		return fmt.Errorf("database '%s' is not running", name)
 	}
 
 	if backupOutput == "" {
@@ -63,8 +59,7 @@ func runBackup(name string) {
 
 	absPath, err := filepath.Abs(backupOutput)
 	if err != nil {
-		color.Red("Error: Invalid output path: %v", err)
-		return
+		return fmt.Errorf("invalid output path: %w", err)
 	}
 
 	color.Cyan("\nCreating backup for '%s'...\n", name)
@@ -89,21 +84,18 @@ func runBackup(name string) {
 	// straight to disk, never buffered whole in memory.
 	dumpFile, err := os.OpenFile(absPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
-		color.Red("Error creating backup file: %v", err)
-		return
+		return fmt.Errorf("creating backup file: %w", err)
 	}
 
 	res, err := dockerMgr.Exec(ctx, db.ContainerID, db.ContainerName, cmd, nil, dumpFile)
 	dumpFile.Close()
 	if err != nil {
 		os.Remove(absPath) // a partial dump is worse than none
-		color.Red("Error creating backup: %v", err)
-		return
+		return fmt.Errorf("creating backup: %w", err)
 	}
 	if res.ExitCode != 0 {
 		os.Remove(absPath)
-		color.Red("Error creating backup (exit %d):\n%s", res.ExitCode, res.Stderr)
-		return
+		return fmt.Errorf("creating backup (exit %d):\n%s", res.ExitCode, res.Stderr)
 	}
 	if res.Stderr != "" {
 		color.Yellow("Warnings:\n%s", res.Stderr)
@@ -116,4 +108,5 @@ func runBackup(name string) {
 	color.Cyan("  File: %s", absPath)
 	color.Cyan("  Size: %.2f MB", size)
 	fmt.Println()
+	return nil
 }

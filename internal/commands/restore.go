@@ -20,8 +20,8 @@ var restoreCmd = &cobra.Command{
 	Use:   "restore <name> <backup-file>",
 	Short: "Restore database from SQL file",
 	Args:  cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
-		runRestore(args[0], args[1])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runRestore(args[0], args[1])
 	},
 }
 
@@ -29,42 +29,36 @@ func init() {
 	restoreCmd.Flags().BoolVarP(&restoreForce, "force", "f", false, "Skip confirmation prompt")
 }
 
-func runRestore(name, backupFile string) {
+func runRestore(name, backupFile string) error {
 	stateMgr, err := state.NewManager()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	db, err := stateMgr.Load(name)
 	if err != nil {
-		color.Red("Error: Database '%s' not found", name)
-		return
+		return fmt.Errorf("database '%s' not found", name)
 	}
 
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	ctx := context.Background()
 
 	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if err != nil || !running {
-		color.Red("Error: Database '%s' is not running", name)
-		return
+		return fmt.Errorf("database '%s' is not running", name)
 	}
 
 	absPath, err := filepath.Abs(backupFile)
 	if err != nil {
-		color.Red("Error: Invalid backup file path: %v", err)
-		return
+		return fmt.Errorf("invalid backup file path: %w", err)
 	}
 
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		color.Red("Error: Backup file not found: %s", absPath)
-		return
+		return fmt.Errorf("backup file not found: %s", absPath)
 	}
 
 	if !restoreForce {
@@ -74,11 +68,11 @@ func runRestore(name, backupFile string) {
 			Default: false,
 		}
 		if err := survey.AskOne(prompt, &confirm); err != nil {
-			return
+			return err
 		}
 		if !confirm {
 			color.Yellow("Cancelled")
-			return
+			return nil
 		}
 	}
 
@@ -86,8 +80,7 @@ func runRestore(name, backupFile string) {
 	// can far exceed available memory.
 	sqlFile, err := os.Open(absPath)
 	if err != nil {
-		color.Red("Error reading backup file: %v", err)
-		return
+		return fmt.Errorf("reading backup file: %w", err)
 	}
 	defer sqlFile.Close()
 
@@ -114,12 +107,10 @@ func runRestore(name, backupFile string) {
 	// exec argument size limits on large dumps.
 	res, err := dockerMgr.Exec(ctx, db.ContainerID, db.ContainerName, cmd, sqlFile, os.Stdout)
 	if err != nil {
-		color.Red("Error restoring database: %v", err)
-		return
+		return fmt.Errorf("restoring database: %w", err)
 	}
 	if res.ExitCode != 0 {
-		color.Red("Restore failed (exit %d):\n%s", res.ExitCode, res.Stderr)
-		return
+		return fmt.Errorf("restore failed (exit %d):\n%s", res.ExitCode, res.Stderr)
 	}
 	if res.Stderr != "" {
 		color.Yellow("Warnings:\n%s", res.Stderr)
@@ -132,4 +123,5 @@ func runRestore(name, backupFile string) {
 	color.Cyan("  File: %s", absPath)
 	color.Cyan("  Size: %.2f MB", size)
 	fmt.Println()
+	return nil
 }

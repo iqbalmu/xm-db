@@ -17,6 +17,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/docker/go-connections/nat"
+	"golang.org/x/term"
 )
 
 const (
@@ -320,6 +321,69 @@ func (d *DockerManager) Exec(ctx context.Context, containerID, containerName str
 		Stderr:   stderr.String(),
 		ExitCode: inspect.ExitCode,
 	}, nil
+}
+
+// ExecInteractive attaches an interactive TTY session to a command inside the
+// container (e.g., psql or mysql).
+func (d *DockerManager) ExecInteractive(ctx context.Context, containerID, containerName string, cmd []string) error {
+	ref := resolveContainerRef(containerID, containerName)
+
+	execConfig := container.ExecOptions{
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Tty:          true,
+		Cmd:          cmd,
+	}
+
+	execID, err := d.client.ContainerExecCreate(ctx, ref, execConfig)
+	if err != nil {
+		return fmt.Errorf("failed to create exec: %w", err)
+	}
+
+	resp, err := d.client.ContainerExecAttach(ctx, execID.ID, container.ExecStartOptions{Tty: true})
+	if err != nil {
+		return fmt.Errorf("failed to attach exec: %w", err)
+	}
+	defer resp.Close()
+
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		oldState, err := term.MakeRaw(fd)
+		if err == nil {
+			defer term.Restore(fd, oldState)
+		}
+		if w, h, err := term.GetSize(fd); err == nil {
+			_ = d.client.ContainerExecResize(ctx, execID.ID, container.ResizeOptions{
+				Height: uint(h),
+				Width:  uint(w),
+			})
+		}
+	}
+
+	outDone := make(chan error, 1)
+	go func() {
+		_, err := io.Copy(os.Stdout, resp.Reader)
+		outDone <- err
+	}()
+
+	go func() {
+		_, _ = io.Copy(resp.Conn, os.Stdin)
+		resp.CloseWrite()
+	}()
+
+	if err := <-outDone; err != nil {
+		return fmt.Errorf("interactive session error: %w", err)
+	}
+
+	inspect, err := d.client.ContainerExecInspect(ctx, execID.ID)
+	if err != nil {
+		return fmt.Errorf("failed to inspect exec: %w", err)
+	}
+	if inspect.ExitCode != 0 {
+		return fmt.Errorf("shell exited with code %d", inspect.ExitCode)
+	}
+	return nil
 }
 
 // VolumeExists reports whether a named volume exists.

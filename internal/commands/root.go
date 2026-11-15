@@ -15,8 +15,10 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "xmdb",
-	Short: "Database Management CLI for Development",
+	Use:           "xmdb",
+	Short:         "Database Management CLI for Development",
+	SilenceUsage:  true,
+	SilenceErrors: true,
 	Long: `xm-db is a powerful CLI tool for managing development databases.
 It supports MySQL and PostgreSQL with easy container management.`,
 	Run: func(cmd *cobra.Command, args []string) {
@@ -45,6 +47,8 @@ func init() {
 	rootCmd.AddCommand(provider.Cmd)
 	rootCmd.AddCommand(table.Cmd)
 	rootCmd.AddCommand(execCmd)
+	rootCmd.AddCommand(shellCmd)
+	rootCmd.AddCommand(resetCmd)
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(updateCmd)
 }

@@ -16,24 +16,24 @@ var configCmd = &cobra.Command{
 var configInitCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize configuration file with defaults",
-	Run: func(cmd *cobra.Command, args []string) {
-		runConfigInit()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runConfigInit()
 	},
 }
 
 var configShowCmd = &cobra.Command{
 	Use:   "show",
 	Short: "Show current configuration",
-	Run: func(cmd *cobra.Command, args []string) {
-		runConfigShow()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runConfigShow()
 	},
 }
 
 var configPathCmd = &cobra.Command{
 	Use:   "path",
 	Short: "Show configuration file path",
-	Run: func(cmd *cobra.Command, args []string) {
-		runConfigPath()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runConfigPath()
 	},
 }
 
@@ -43,19 +43,18 @@ func init() {
 	configCmd.AddCommand(configPathCmd)
 }
 
-func runConfigInit() {
+func runConfigInit() error {
 	if config.Exists() {
 		color.Yellow("Configuration file already exists")
 		path, _ := config.GetConfigPath()
 		fmt.Printf("Path: %s\n", path)
 		fmt.Println("\nUse 'xmdb config show' to view current configuration")
-		return
+		return nil
 	}
 
 	cfg := config.DefaultConfig()
 	if err := cfg.Save(); err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	path, _ := config.GetConfigPath()
@@ -63,25 +62,25 @@ func runConfigInit() {
 	color.Cyan("  Path: %s", path)
 	fmt.Println("\nDefault settings:")
 	displayConfig(cfg)
+	return nil
 }
 
-func runConfigShow() {
+func runConfigShow() error {
 	cfg, err := config.Load()
 	if err != nil {
-		color.Red("Error loading configuration: %v", err)
-		return
+		return fmt.Errorf("loading configuration: %w", err)
 	}
 
 	color.Cyan("\nCurrent Configuration:\n")
 	fmt.Println(color.CyanString("════════════════════════════════════════"))
 	displayConfig(cfg)
+	return nil
 }
 
-func runConfigPath() {
+func runConfigPath() error {
 	path, err := config.GetConfigPath()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	fmt.Println(path)
@@ -90,6 +89,7 @@ func runConfigPath() {
 		color.Yellow("\nConfiguration file does not exist yet")
 		fmt.Println("Run 'xmdb config init' to create it")
 	}
+	return nil
 }
 
 func displayConfig(cfg *config.Config) {

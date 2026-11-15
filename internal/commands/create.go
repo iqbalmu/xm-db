@@ -39,8 +39,9 @@ var createCmd = &cobra.Command{
 	Use:   "create <name>",
 	Short: "Create a new database",
 	Args:  cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		runCreate(args)
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := runCreate(args)
+		return err
 	},
 }
 
@@ -53,7 +54,7 @@ func init() {
 	createCmd.Flags().BoolVar(&createWithVolume, "volume", true, "Create with persistent volume (default: true)")
 }
 
-func runCreate(args []string) bool {
+func runCreate(args []string) (bool, error) {
 	var dbName string
 	var provider string
 	var version string
@@ -65,8 +66,7 @@ func runCreate(args []string) bool {
 
 	stateMgr, err := state.NewManager()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return true
+		return true, err
 	}
 
 	// Interactive mode: Esc goes back one prompt; Esc at the very first
@@ -74,7 +74,7 @@ func runCreate(args []string) bool {
 	if createInteractive || len(args) == 0 {
 		if !promptCreate(stateMgr, &dbName, &provider, &version, &port,
 			&rootPassword, &createUser, &username, &userPassword) {
-			return false // backed out
+			return false, nil // backed out
 		}
 	} else {
 		dbName = args[0]
@@ -83,21 +83,18 @@ func runCreate(args []string) bool {
 		port = createPort
 
 		if provider == "" {
-			color.Red("Error: --provider is required")
-			return true
+			return true, fmt.Errorf("--provider is required")
 		}
 
 		var err error
 		rootPassword, err = utils.GeneratePassword(utils.DefaultPasswordLength)
 		if err != nil {
-			color.Red("Error generating password: %v", err)
-			return true
+			return true, fmt.Errorf("generating password: %w", err)
 		}
 
 		userPassword, err = utils.GeneratePassword(utils.DefaultPasswordLength)
 		if err != nil {
-			color.Red("Error generating password: %v", err)
-			return true
+			return true, fmt.Errorf("generating password: %w", err)
 		}
 
 		username = defaultUsername
@@ -112,14 +109,12 @@ func runCreate(args []string) bool {
 	}
 
 	if !createInteractive && len(args) != 0 && stateMgr.Exists(dbName) {
-		color.Red("Error: Database '%s' already exists", dbName)
-		return true
+		return true, fmt.Errorf("database '%s' already exists", dbName)
 	}
 
 	prov, err := providers.For(provider)
 	if err != nil {
-		color.Red("Error: %v", err)
-		return true
+		return true, err
 	}
 
 	if port == 0 {
@@ -128,12 +123,10 @@ func runCreate(args []string) bool {
 
 	// Refuse ports taken by another managed database or by any local process.
 	if owner := managedPortOwner(stateMgr, port); owner != "" {
-		color.Red("Error: Port %d is already used by database '%s'", port, owner)
-		return true
+		return true, fmt.Errorf("port %d is already used by database '%s'", port, owner)
 	}
 	if portInUse(port) {
-		color.Red("Error: Port %d is already in use by another process", port)
-		return true
+		return true, fmt.Errorf("port %d is already in use by another process", port)
 	}
 
 	color.Cyan("\nCreating %s database '%s'...\n", provider, dbName)
@@ -141,15 +134,13 @@ func runCreate(args []string) bool {
 	ctx := context.Background()
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
-		color.Red("Error: %v", err)
-		return true
+		return true, err
 	}
 
 	imageName := prov.GetImageName(version)
 	color.White("Pulling image %s...", imageName)
 	if err := dockerMgr.PullImage(ctx, imageName); err != nil {
-		color.Red("Error pulling image: %v", err)
-		return true
+		return true, fmt.Errorf("pulling image: %w", err)
 	}
 
 	containerName := fmt.Sprintf("xmdb_%s", dbName)
@@ -163,9 +154,7 @@ func runCreate(args []string) bool {
 			// Images skip first-time init on an existing volume, so the new
 			// credentials would never apply and creation would stall. Refuse
 			// instead of hanging.
-			color.Red("Error: volume '%s' already holds data from a previous database.", volumeName)
-			fmt.Printf("  Remove it if you do not need the data:\n    docker volume rm %s\n  Or create without persistent storage: xmdb create <name> --volume=false\n", volumeName)
-			return true
+			return true, fmt.Errorf("volume '%s' already holds data from a previous database; remove it with 'docker volume rm %s' or pass --volume=false", volumeName, volumeName)
 		}
 	}
 
@@ -200,15 +189,13 @@ func runCreate(args []string) bool {
 	color.White("Creating container...")
 	containerID, err := dockerMgr.CreateContainer(ctx, containerConfig)
 	if err != nil {
-		color.Red("Error creating container: %v", err)
-		return true
+		return true, fmt.Errorf("creating container: %w", err)
 	}
 
 	color.White("Starting container...")
 	if err := dockerMgr.StartContainer(ctx, containerID, containerName); err != nil {
-		color.Red("Error starting container: %v", err)
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-		return true
+		return true, fmt.Errorf("starting container: %w", err)
 	}
 
 	// Wait until the server answers a real protocol handshake. Rootless
@@ -216,9 +203,8 @@ func runCreate(args []string) bool {
 	// listens, so a bare port dial is not proof of readiness.
 	color.White("Waiting for database to accept connections...")
 	if err := waitForDatabase(ctx, dockerMgr, containerID, containerName, prov, adminConfig, containerStartTimeout); err != nil {
-		color.Red("Error: %v", err)
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-		return true
+		return true, err
 	}
 
 	// Create user if requested. Fail hard instead of saving credentials that
@@ -228,16 +214,14 @@ func runCreate(args []string) bool {
 
 		db, err := prov.Connect(adminConfig)
 		if err != nil {
-			color.Red("Error connecting to database: %v", err)
 			cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-			return true
+			return true, fmt.Errorf("connecting to database: %w", err)
 		}
 
 		if err := prov.CreateUser(ctx, db, username, userPassword, dbName); err != nil {
 			db.Close()
-			color.Red("Error creating user: %v", err)
 			cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-			return true
+			return true, fmt.Errorf("creating user: %w", err)
 		}
 		db.Close()
 	}
@@ -259,8 +243,7 @@ func runCreate(args []string) bool {
 	}
 
 	if err := stateMgr.Save(dbState); err != nil {
-		color.Red("Error saving state: %v", err)
-		return true
+		return true, fmt.Errorf("saving state: %w", err)
 	}
 
 	color.Green("\nDatabase '%s' created successfully!\n", dbName)
@@ -280,7 +263,7 @@ func runCreate(args []string) bool {
 	}
 
 	fmt.Println()
-	return true
+	return true, nil
 }
 
 // Steps of the guided create flow, in prompt order.
@@ -302,6 +285,44 @@ const (
 // control back to the wizard menu. Values already entered are kept and
 // re-offered as defaults when navigating back.
 func promptCreate(
+	stateMgr *state.Manager,
+	dbName, provider, version *string,
+	port *int,
+	rootPassword *string,
+	createUser *bool,
+	username, userPassword *string,
+) bool {
+	n, p, v, pt, grp, rp, cu, u, up, ok := runCreateTUI(stateMgr)
+	if !ok {
+		return false
+	}
+	*dbName = n
+	if createProvider != "" {
+		*provider = createProvider
+	} else {
+		*provider = p
+	}
+	if createVersion != "" {
+		*version = createVersion
+	} else {
+		*version = v
+	}
+	if createPort != 0 {
+		*port = createPort
+	} else {
+		*port = pt
+	}
+	if createGroup == "" {
+		createGroup = grp
+	}
+	*rootPassword = rp
+	*createUser = cu
+	*username = u
+	*userPassword = up
+	return true
+}
+
+func promptCreateLegacy(
 	stateMgr *state.Manager,
 	dbName, provider, version *string,
 	port *int,

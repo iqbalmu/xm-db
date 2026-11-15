@@ -11,32 +11,35 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var infoJSON bool
+
 var infoCmd = &cobra.Command{
 	Use:   "info <name>",
 	Short: "Show detailed information about a database",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		runInfo(args[0])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runInfo(args[0])
 	},
 }
 
-func runInfo(name string) {
+func init() {
+	infoCmd.Flags().BoolVar(&infoJSON, "json", false, "Output as JSON")
+}
+
+func runInfo(name string) error {
 	stateMgr, err := state.NewManager()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	db, err := stateMgr.Load(name)
 	if err != nil {
-		color.Red("Error: Database '%s' not found", name)
-		return
+		return fmt.Errorf("database '%s' not found", name)
 	}
 
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	ctx := context.Background()
@@ -45,6 +48,43 @@ func runInfo(name string) {
 	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if err == nil && running {
 		status = "running"
+	}
+
+	prov, err := providers.For(db.Provider)
+	if err != nil {
+		return err
+	}
+
+	connStr := prov.GetConnectionString(connectionConfig(db))
+
+	if infoJSON {
+		return printJSON(struct {
+			Name             string `json:"name"`
+			Provider         string `json:"provider"`
+			Group            string `json:"group"`
+			Version          string `json:"version"`
+			Status           string `json:"status"`
+			Port             int    `json:"port"`
+			ContainerName    string `json:"container_name"`
+			ContainerID      string `json:"container_id"`
+			DatabaseName     string `json:"database_name"`
+			User             string `json:"user,omitempty"`
+			CreatedAt        string `json:"created_at"`
+			ConnectionString string `json:"connection_string"`
+		}{
+			Name:             db.Name,
+			Provider:         db.Provider,
+			Group:            groupLabel(db.Group),
+			Version:          db.Version,
+			Status:           status,
+			Port:             db.Port,
+			ContainerName:    db.ContainerName,
+			ContainerID:      db.ContainerID,
+			DatabaseName:     db.DatabaseName,
+			User:             db.User,
+			CreatedAt:        db.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+			ConnectionString: connStr,
+		})
 	}
 
 	titleColor := color.New(color.FgCyan, color.Bold)
@@ -103,16 +143,9 @@ func runInfo(name string) {
 	titleColor.Println("Connection Information:")
 	fmt.Println(color.CyanString("───────────────────────────────────────"))
 
-	prov, err := providers.For(db.Provider)
-	if err != nil {
-		color.Red("Error: %v", err)
-		return
-	}
-
-	connStr := prov.GetConnectionString(connectionConfig(db))
-
 	labelColor.Print("Connection String: ")
 	valueColor.Println(connStr)
 
 	fmt.Println()
+	return nil
 }

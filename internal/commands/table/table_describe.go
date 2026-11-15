@@ -19,28 +19,25 @@ var describeCmd = &cobra.Command{
 	Aliases: []string{"desc"},
 	Short:   "Describe table structure",
 	Args:    cobra.ExactArgs(2),
-	Run: func(cmd *cobra.Command, args []string) {
-		runDescribe(args[0], args[1])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runDescribe(args[0], args[1])
 	},
 }
 
-func runDescribe(dbName, tableName string) {
+func runDescribe(dbName, tableName string) error {
 	stateMgr, err := state.NewManager()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	dbState, err := stateMgr.Load(dbName)
 	if err != nil {
-		color.Red("Error: Database '%s' not found", dbName)
-		return
+		return fmt.Errorf("database '%s' not found", dbName)
 	}
 
 	prov, err := providers.For(dbState.Provider)
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	dbConfig := &providers.DBConfig{
@@ -52,8 +49,7 @@ func runDescribe(dbName, tableName string) {
 
 	db, err := prov.Connect(dbConfig)
 	if err != nil {
-		color.Red("Error connecting to database: %v", err)
-		return
+		return fmt.Errorf("connecting to database: %w", err)
 	}
 	defer db.Close()
 
@@ -72,8 +68,7 @@ func runDescribe(dbName, tableName string) {
 	}
 
 	if err != nil {
-		color.Red("Error describing table: %v", err)
-		return
+		return fmt.Errorf("describing table: %w", err)
 	}
 	defer rows.Close()
 
@@ -125,4 +120,5 @@ func runDescribe(dbName, tableName string) {
 	table.Render()
 
 	fmt.Println()
+	return nil
 }

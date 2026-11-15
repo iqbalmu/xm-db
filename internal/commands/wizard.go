@@ -20,23 +20,30 @@ type wizardAction struct {
 	run   func() navResult
 }
 
-// runWizard is the interactive menu shown by `xmdb` with no arguments.
-// Esc goes back one level: prompts return to the previous prompt, a group
-// menu returns to the top menu, and at the top menu it ends the program.
-// An action that runs to completion still ends the program.
+// runWizard launches the interactive split-pane TUI dashboard when `xmdb` is
+// invoked with no arguments.
 func runWizard() {
+	runDashboardTUI()
+}
+
+func runWizardLegacy() {
 	groups := []wizardGroup{
 		{
 			label: "Databases",
 			actions: []wizardAction{
 				{label: "Create a new database", run: func() navResult {
-					if runCreate(nil) {
+					ok, err := runCreate(nil)
+					if err != nil {
+						color.Red("Error: %v", err)
+						return navExit
+					}
+					if ok {
 						return navExit
 					}
 					return navBack
 				}},
-				{label: "List all databases", run: func() navResult { runList(); return navExit }},
-				{label: "Show status of all databases", run: func() navResult { runStatus(); return navExit }},
+				{label: "List all databases", run: wrapRun(runList)},
+				{label: "Show status of all databases", run: wrapRun(runStatus)},
 				{label: "Start a database", run: pickAndRun("Start which database?", runStart)},
 				{label: "Stop a database", run: pickAndRun("Stop which database?", runStop)},
 				{label: "Remove a database", run: pickAndRun("Remove which database?", runRemove)},
@@ -108,14 +115,25 @@ func runGroupMenu(group wizardGroup) navResult {
 	return navBack
 }
 
+func wrapRun(fn func() error) func() navResult {
+	return func() navResult {
+		if err := fn(); err != nil {
+			color.Red("Error: %v", err)
+		}
+		return navExit
+	}
+}
+
 // pickAndRun asks which database to act on; Esc there goes back to the menu.
-func pickAndRun(question string, fn func(string)) func() navResult {
+func pickAndRun(question string, fn func(string) error) func() navResult {
 	return func() navResult {
 		name, ok := pickDatabase(question)
 		if !ok {
 			return navBack
 		}
-		fn(name)
+		if err := fn(name); err != nil {
+			color.Red("Error: %v", err)
+		}
 		return navExit
 	}
 }

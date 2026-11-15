@@ -26,8 +26,8 @@ const updateRepo = "iqbalmu/xm-db"
 var updateCmd = &cobra.Command{
 	Use:   "update",
 	Short: "Update xmdb to the latest release",
-	Run: func(cmd *cobra.Command, args []string) {
-		runUpdate()
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runUpdate()
 	},
 }
 
@@ -209,16 +209,14 @@ func sha256File(path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-func runUpdate() {
+func runUpdate() error {
 	execPath, err := os.Executable()
 	if err != nil {
-		color.Red("Error locating the running binary: %v", err)
-		return
+		return fmt.Errorf("locating the running binary: %w", err)
 	}
 	execPath, err = filepath.EvalSymlinks(execPath)
 	if err != nil {
-		color.Red("Error resolving the binary path: %v", err)
-		return
+		return fmt.Errorf("resolving the binary path: %w", err)
 	}
 
 	base := updateBase()
@@ -226,13 +224,12 @@ func runUpdate() {
 
 	tag, err := latestTag(base)
 	if err != nil {
-		color.Red("Error fetching the latest release: %v", err)
-		return
+		return fmt.Errorf("fetching the latest release: %w", err)
 	}
 
 	if isUpToDate(Version, tag) {
 		color.Green("Already on the latest version (%s).", Version)
-		return
+		return nil
 	}
 
 	archive, member := assetNames(tag)
@@ -242,55 +239,45 @@ func runUpdate() {
 	tmpDir := filepath.Join(filepath.Dir(execPath), ".xmdb-update")
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
 		if os.IsPermission(err) {
-			color.Red("No write permission next to %s. Rerun elevated: sudo xmdb update", execPath)
-			return
+			return fmt.Errorf("no write permission next to %s; rerun elevated: sudo xmdb update", execPath)
 		}
-		color.Red("Error creating a temp directory next to the binary: %v", err)
-		return
+		return fmt.Errorf("creating temp directory next to the binary: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
 
 	archivePath := filepath.Join(tmpDir, archive)
 	color.White("==> Downloading %s…", archive)
 	if err := download(client, downloadBase+"/"+archive, archivePath); err != nil {
-		color.Red("Error downloading: %v", err)
-		return
+		return fmt.Errorf("downloading: %w", err)
 	}
 
 	color.White("==> Verifying checksum…")
 	checksumsPath := filepath.Join(tmpDir, "checksums.txt")
 	if err := download(client, downloadBase+"/checksums.txt", checksumsPath); err != nil {
-		color.Red("Error downloading checksums: %v", err)
-		return
+		return fmt.Errorf("downloading checksums: %w", err)
 	}
 	checksums, err := os.ReadFile(checksumsPath)
 	if err != nil {
-		color.Red("Error reading checksums: %v", err)
-		return
+		return fmt.Errorf("reading checksums: %w", err)
 	}
 	want, err := findChecksum(string(checksums), archive)
 	if err != nil {
-		color.Red("%v", err)
-		return
+		return err
 	}
 	got, err := sha256File(archivePath)
 	if err != nil {
-		color.Red("Error hashing the download: %v", err)
-		return
+		return fmt.Errorf("hashing the download: %w", err)
 	}
 	if got != want {
-		color.Red("Checksum mismatch (want %s, got %s), aborting.", want, got)
-		return
+		return fmt.Errorf("checksum mismatch (want %s, got %s), aborting", want, got)
 	}
 
 	binaryPath := filepath.Join(tmpDir, member)
 	if err := extractBinary(archivePath, member, binaryPath); err != nil {
-		color.Red("Error extracting %s: %v", member, err)
-		return
+		return fmt.Errorf("extracting %s: %w", member, err)
 	}
 	if err := os.Chmod(binaryPath, 0o755); err != nil {
-		color.Red("Error setting permissions: %v", err)
-		return
+		return fmt.Errorf("setting permissions: %w", err)
 	}
 
 	color.White("==> Replacing %s…", execPath)
@@ -298,8 +285,7 @@ func runUpdate() {
 	_ = os.Remove(staged)
 	if err := os.Rename(binaryPath, staged); err != nil {
 		// Both paths live next to the binary, so cross-device rename cannot happen.
-		color.Red("Error staging the new binary: %v", err)
-		return
+		return fmt.Errorf("staging the new binary: %w", err)
 	}
 
 	if runtime.GOOS == "windows" {
@@ -308,26 +294,23 @@ func runUpdate() {
 		old := execPath + ".old"
 		_ = os.Remove(old)
 		if err := os.Rename(execPath, old); err != nil {
-			color.Red("Error backing up the current binary: %v", err)
-			return
+			return fmt.Errorf("backing up the current binary: %w", err)
 		}
 		if err := os.Rename(staged, execPath); err != nil {
 			_ = os.Rename(old, execPath)
-			color.Red("Error installing the new binary: %v", err)
-			return
+			return fmt.Errorf("installing the new binary: %w", err)
 		}
 		_ = os.Remove(old)
 	} else {
 		if err := os.Rename(staged, execPath); err != nil {
 			if os.IsPermission(err) {
-				color.Red("Permission denied replacing %s. Rerun elevated: sudo xmdb update", execPath)
-				return
+				return fmt.Errorf("permission denied replacing %s; rerun elevated: sudo xmdb update", execPath)
 			}
-			color.Red("Error installing the new binary: %v", err)
-			return
+			return fmt.Errorf("installing the new binary: %w", err)
 		}
 	}
 
 	color.Green("\nUpdated: %s -> %s", Version, strings.TrimPrefix(tag, "v"))
 	fmt.Println("   Run `xmdb version` to confirm.")
+	return nil
 }

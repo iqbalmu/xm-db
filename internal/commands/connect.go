@@ -4,44 +4,46 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/atotto/clipboard"
 	"github.com/fatih/color"
 	"github.com/iqbalmu/xm-db/internal/providers"
 	"github.com/iqbalmu/xm-db/internal/state"
 	"github.com/spf13/cobra"
 )
 
-var connectFormat string
+var (
+	connectFormat string
+	connectCopy   bool
+)
 
 var connectCmd = &cobra.Command{
 	Use:   "connect <database-name>",
 	Short: "Show connection information",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		runConnect(args[0])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runConnect(args[0])
 	},
 }
 
 func init() {
 	connectCmd.Flags().StringVar(&connectFormat, "format", "string", "Output format (string, json, env)")
+	connectCmd.Flags().BoolVarP(&connectCopy, "copy", "c", false, "Copy connection string to clipboard")
 }
 
-func runConnect(name string) {
+func runConnect(name string) error {
 	stateMgr, err := state.NewManager()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	db, err := stateMgr.Load(name)
 	if err != nil {
-		color.Red("Error: Database '%s' not found", name)
-		return
+		return fmt.Errorf("database '%s' not found", name)
 	}
 
 	prov, err := providers.For(db.Provider)
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	connStr := prov.GetConnectionString(connectionConfig(db))
@@ -68,8 +70,7 @@ func runConnect(name string) {
 
 		data, err := json.MarshalIndent(info, "", "  ")
 		if err != nil {
-			color.Red("Error: %v", err)
-			return
+			return err
 		}
 		fmt.Println(string(data))
 
@@ -110,4 +111,15 @@ func runConnect(name string) {
 		color.Green("%s", connStr)
 		fmt.Println()
 	}
+
+	if connectCopy {
+		if err := clipboard.WriteAll(connStr); err != nil {
+			return fmt.Errorf("copying to clipboard: %w", err)
+		}
+		if connectFormat == "string" {
+			color.Cyan("Copied connection string to clipboard!")
+			fmt.Println()
+		}
+	}
+	return nil
 }

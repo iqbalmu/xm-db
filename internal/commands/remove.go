@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
@@ -20,8 +21,8 @@ var removeCmd = &cobra.Command{
 	Aliases: []string{"rm", "delete"},
 	Short:   "Remove a database",
 	Args:    cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		runRemove(args[0])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return runRemove(args[0])
 	},
 }
 
@@ -30,17 +31,15 @@ func init() {
 	removeCmd.Flags().BoolVar(&removeKeepData, "keep-data", false, "Keep the data volume (reused if the database is created again)")
 }
 
-func runRemove(name string) {
+func runRemove(name string) error {
 	stateMgr, err := state.NewManager()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	db, err := stateMgr.Load(name)
 	if err != nil {
-		color.Red("Error: Database '%s' not found", name)
-		return
+		return fmt.Errorf("database '%s' not found", name)
 	}
 
 	if !removeForce {
@@ -50,18 +49,17 @@ func runRemove(name string) {
 			Default: false,
 		}
 		if err := survey.AskOne(prompt, &confirm); err != nil {
-			return
+			return err
 		}
 		if !confirm {
 			color.Yellow("Cancelled")
-			return
+			return nil
 		}
 	}
 
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	ctx := context.Background()
@@ -93,9 +91,9 @@ func runRemove(name string) {
 	}
 
 	if err := stateMgr.Delete(name); err != nil {
-		color.Red("Error removing state: %v", err)
-		return
+		return fmt.Errorf("removing state: %w", err)
 	}
 
 	color.Green("Database '%s' removed successfully", name)
+	return nil
 }

@@ -16,51 +16,57 @@ var (
 	statusCmd = &cobra.Command{
 		Use:   "status",
 		Short: "Show status of all managed databases",
-		Run: func(cmd *cobra.Command, args []string) {
-			runStatus()
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runStatus()
 		},
 	}
 	statusGroup string
+	statusJSON  bool
 )
 
 func init() {
 	statusCmd.Flags().StringVarP(&statusGroup, "group", "g", "", "Filter by group ('global' for ungrouped databases)")
+	statusCmd.Flags().BoolVar(&statusJSON, "json", false, "Output as JSON")
 }
 
-func runStatus() {
+func runStatus() error {
 	stateMgr, err := state.NewManager()
 	if err != nil {
-		color.Red("Error: %v", err)
-		return
+		return err
 	}
 
 	databases, err := stateMgr.List()
 	if err != nil {
-		color.Red("Error loading databases: %v", err)
-		return
+		return fmt.Errorf("loading databases: %w", err)
 	}
 
 	if total := len(databases); total > 0 {
 		databases = filterByGroup(databases, statusGroup)
 		if len(databases) == 0 {
+			if statusJSON {
+				return printJSON([]dbListItem{})
+			}
 			color.Yellow("\nNo databases in group '%s'.", statusGroup)
-			return
+			return nil
 		}
 	}
 
 	if len(databases) == 0 {
+		if statusJSON {
+			return printJSON([]dbListItem{})
+		}
 		color.Yellow("No databases found. Create one with: xmdb create <name>")
-		return
+		return nil
 	}
 
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
-		color.Red("Error connecting to Docker: %v", err)
-		return
+		return fmt.Errorf("connecting to Docker: %w", err)
 	}
 
 	ctx := context.Background()
 
+	items := make([]dbListItem, 0, len(databases))
 	var data [][]any
 	for _, db := range databases {
 		status := "stopped"
@@ -71,7 +77,15 @@ func runStatus() {
 			}
 		}
 
-		createdAt := db.CreatedAt.Format("2006-01-02 15:04")
+		items = append(items, dbListItem{
+			Name:      db.Name,
+			Provider:  db.Provider,
+			Version:   db.Version,
+			Group:     groupLabel(db.Group),
+			Status:    status,
+			Port:      db.Port,
+			CreatedAt: db.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		})
 
 		data = append(data, []any{
 			db.Name,
@@ -79,8 +93,12 @@ func runStatus() {
 			groupLabel(db.Group),
 			status,
 			db.Port,
-			createdAt,
+			db.CreatedAt.Format("2006-01-02 15:04"),
 		})
+	}
+
+	if statusJSON {
+		return printJSON(items)
 	}
 
 	fmt.Println()
@@ -91,4 +109,5 @@ func runStatus() {
 	table.Render()
 
 	fmt.Println()
+	return nil
 }
