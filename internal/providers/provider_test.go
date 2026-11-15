@@ -26,6 +26,24 @@ func TestKnownVersionsNewestFirst(t *testing.T) {
 	t.Errorf("postgres default %q missing from KnownVersions", DefaultPostgresVersion)
 }
 
+func TestGetVolumePath(t *testing.T) {
+	if got := NewMySQLProvider().GetVolumePath("8.0"); got != "/var/lib/mysql" {
+		t.Errorf("mysql volume path = %q, want /var/lib/mysql", got)
+	}
+
+	pg := NewPostgresProvider()
+	for _, v := range []string{"13", "14", "15", "16", "17", ""} {
+		if got := pg.GetVolumePath(v); got != "/var/lib/postgresql/data" {
+			t.Errorf("postgres %q volume path = %q, want the legacy data path", v, got)
+		}
+	}
+	for _, v := range []string{"18", "18-alpine", "19"} {
+		if got := pg.GetVolumePath(v); got != "/var/lib/postgresql" {
+			t.Errorf("postgres %q volume path = %q, want /var/lib/postgresql", v, got)
+		}
+	}
+}
+
 func TestGetImageName(t *testing.T) {
 	if got := NewMySQLProvider().GetImageName(""); got != "mysql:8.0" {
 		t.Errorf("mysql default image = %q, want mysql:8.0", got)

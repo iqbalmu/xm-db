@@ -157,12 +157,7 @@ func runCreate(args []string) bool {
 	var volumePath string
 	if createWithVolume {
 		volumeName = fmt.Sprintf("xmdb_%s_data", dbName)
-
-		if provider == utils.ProviderMySQL {
-			volumePath = "/var/lib/mysql"
-		} else {
-			volumePath = "/var/lib/postgresql/data"
-		}
+		volumePath = prov.GetVolumePath(version)
 
 		if exists, err := dockerMgr.VolumeExists(ctx, volumeName); err == nil && exists {
 			// Images skip first-time init on an existing volume, so the new

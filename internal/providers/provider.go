@@ -24,6 +24,9 @@ type Provider interface {
 	GetContainerPort() string
 	GetEnvVars(config *DBConfig) []string
 	GetConnectionString(config *DBConfig) string
+	// GetVolumePath returns the container path a named volume must be
+	// mounted at for the given version.
+	GetVolumePath(version string) string
 	// Connect opens a working sql.DB for the given config. Passwords that are
 	// awkward in a connection string (MySQL ':', '/', '@') are safe here.
 	Connect(cfg *DBConfig) (*sql.DB, error)

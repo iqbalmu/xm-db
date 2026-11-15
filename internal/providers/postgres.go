@@ -32,6 +32,38 @@ func (p *PostgresProvider) GetContainerPort() string {
 	return "5432"
 }
 
+const defaultPostgresMajor = 16 // matches DefaultPostgresVersion
+
+// GetVolumePath returns where the named volume mounts. PostgreSQL 18+ images
+// expect the mount at /var/lib/postgresql (data lands in a major-version
+// subdirectory); older images use /var/lib/postgresql/data.
+func (p *PostgresProvider) GetVolumePath(version string) string {
+	if postgresMajor(version) >= 18 {
+		return "/var/lib/postgresql"
+	}
+	return "/var/lib/postgresql/data"
+}
+
+// postgresMajor extracts the leading major version number; unrecognised
+// forms fall back to the configured default.
+func postgresMajor(version string) int {
+	if version == "" {
+		version = DefaultPostgresVersion
+	}
+	i := 0
+	for i < len(version) && version[i] >= '0' && version[i] <= '9' {
+		i++
+	}
+	if i == 0 {
+		return defaultPostgresMajor
+	}
+	n, err := strconv.Atoi(version[:i])
+	if err != nil || n <= 0 {
+		return defaultPostgresMajor
+	}
+	return n
+}
+
 func (p *PostgresProvider) GetEnvVars(config *DBConfig) []string {
 	return []string{
 		fmt.Sprintf("POSTGRES_PASSWORD=%s", config.RootPassword),

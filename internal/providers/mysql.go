@@ -41,6 +41,11 @@ func (m *MySQLProvider) GetContainerPort() string {
 	return "3306"
 }
 
+// GetVolumePath is version-independent for MySQL.
+func (m *MySQLProvider) GetVolumePath(_ string) string {
+	return "/var/lib/mysql"
+}
+
 func (m *MySQLProvider) GetEnvVars(config *DBConfig) []string {
 	return []string{
 		fmt.Sprintf("MYSQL_ROOT_PASSWORD=%s", config.RootPassword),
