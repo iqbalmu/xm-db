@@ -429,6 +429,17 @@ func createDBCmd(opts createOptions) tea.Cmd {
 }
 
 func (m *dashboardModel) applyFilter() {
+	// Remember the current selection so the cursor follows the same row
+	// across filter changes and periodic reloads.
+	prevGroup, prevDB := "", ""
+	if row := m.selectedRow(); row != nil {
+		if row.isGroup {
+			prevGroup = row.group
+		} else if row.entry != nil {
+			prevDB = row.entry.db.Name
+		}
+	}
+
 	q := strings.ToLower(strings.TrimSpace(m.filterInput.Value()))
 	if q == "" {
 		m.filtered = m.entries
@@ -444,13 +455,20 @@ func (m *dashboardModel) applyFilter() {
 		m.filtered = out
 	}
 	m.rebuildRows()
-	if m.selected() == nil {
-		for i, r := range m.rows {
-			if !r.isGroup && r.entry != nil {
-				m.cursor = i
-				m.ensureLeftVisible()
-				break
-			}
+
+	if prevDB != "" && m.selectDBByName(prevDB) {
+		return
+	}
+	if prevGroup != "" && m.selectGroupByName(prevGroup) {
+		return
+	}
+	// The selection vanished (filtered out) or nothing was selected yet:
+	// land on the first database row.
+	for i, r := range m.rows {
+		if !r.isGroup && r.entry != nil {
+			m.cursor = i
+			m.ensureLeftVisible()
+			return
 		}
 	}
 }
@@ -654,14 +672,26 @@ func (m dashboardModel) groupEntries(group string) []dbEntry {
 	return out
 }
 
-func (m *dashboardModel) selectDBByName(name string) {
+func (m *dashboardModel) selectDBByName(name string) bool {
 	for i, r := range m.rows {
 		if !r.isGroup && r.entry != nil && r.entry.db.Name == name {
 			m.cursor = i
 			m.ensureLeftVisible()
-			return
+			return true
 		}
 	}
+	return false
+}
+
+func (m *dashboardModel) selectGroupByName(group string) bool {
+	for i, r := range m.rows {
+		if r.isGroup && r.group == group {
+			m.cursor = i
+			m.ensureLeftVisible()
+			return true
+		}
+	}
+	return false
 }
 
 func (m *dashboardModel) resetRightSubstate() {
@@ -705,18 +735,8 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case msgDatabasesLoaded:
 		m.busy = ""
 		m.dockerErr = msg.dockerErr
-		prevName := ""
-		if sel := m.selected(); sel != nil {
-			prevName = sel.db.Name
-		}
 		m.entries = msg.entries
 		m.applyFilter()
-		if prevName != "" {
-			m.selectDBByName(prevName)
-		} else if len(m.rows) > 1 && m.rows[0].isGroup && m.cursor == 0 {
-			// Land on first database item on initial load
-			m.cursor = 1
-		}
 		return m, loadDetailCmd(m.selected(), m.activeTab)
 
 	case msgDetailLoaded:

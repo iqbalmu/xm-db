@@ -145,6 +145,104 @@ func TestDashboardGroupCollapseAndPaneFocus(t *testing.T) {
 	}
 }
 
+func TestDashboardSelectionSurvivesReload(t *testing.T) {
+	m := newDashboardModel()
+	m.busy = ""
+	m.entries = []dbEntry{
+		{db: &state.Database{Name: "app_pg", Provider: "postgres", Port: 5432, Group: "work"}},
+		{db: &state.Database{Name: "api_mysql", Provider: "mysql", Port: 3306, Group: "work"}},
+		{db: &state.Database{Name: "local_pg", Provider: "postgres", Port: 5433, Group: ""}},
+	}
+	m.applyFilter()
+
+	// Rest on the "work" group header (as after collapsing it with enter).
+	m.cursor = 0
+	m.applyFilter()
+	if !m.rows[m.cursor].isGroup || m.rows[m.cursor].group != "work" {
+		t.Fatalf("cursor on group header jumped to row %d (%s)", m.cursor, m.rows[m.cursor].group)
+	}
+
+	// Simulate a periodic reload: selection must follow the same db by name.
+	for i, r := range m.rows {
+		if !r.isGroup && r.entry.db.Name == "app_pg" {
+			m.cursor = i
+			break
+		}
+	}
+	m.applyFilter()
+	if sel := m.selected(); sel == nil || sel.db.Name != "app_pg" {
+		if sel == nil {
+			t.Fatalf("expected selection preserved, got group header row %d", m.cursor)
+		} else {
+			t.Fatalf("expected app_pg selected, got %s", sel.db.Name)
+		}
+	}
+
+	// Second reload with identical entries: cursor must not drift.
+	m.applyFilter()
+	if sel := m.selected(); sel == nil || sel.db.Name != "app_pg" {
+		t.Fatalf("cursor drifted after reload: row %d", m.cursor)
+	}
+
+	// Header selection also survives a reload while its group stays collapsed.
+	m.collapsedGroups["work"] = true
+	m.applyFilter()
+	m.cursor = 0
+	m.applyFilter()
+	if !m.rows[m.cursor].isGroup || m.rows[m.cursor].group != "work" {
+		t.Fatalf("cursor on collapsed group header jumped to row %d", m.cursor)
+	}
+}
+
+// The 5s tick reloads via msgDatabasesLoaded -> applyFilter; a cursor resting
+// on a group header must not be hijacked to the first db row.
+func TestDashboardTickReloadKeepsHeaderSelection(t *testing.T) {
+	m := newDashboardModel()
+	m.busy = ""
+	m.entries = []dbEntry{
+		{db: &state.Database{Name: "app_pg", Provider: "postgres", Port: 5432, Group: "work"}},
+		{db: &state.Database{Name: "blog_mysql", Provider: "mysql", Port: 3306, Group: ""}},
+	}
+	m.applyFilter()
+
+	// Move cursor up onto the "work" group header.
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = next.(dashboardModel)
+	if !m.rows[m.cursor].isGroup {
+		t.Fatalf("expected cursor on group header")
+	}
+
+	// Deliver what the tick produces: a fresh load with identical entries.
+	next, _ = m.Update(msgDatabasesLoaded{
+		entries: []dbEntry{
+			{db: &state.Database{Name: "app_pg", Provider: "postgres", Port: 5432, Group: "work"}},
+			{db: &state.Database{Name: "blog_mysql", Provider: "mysql", Port: 3306, Group: ""}},
+		},
+	})
+	m = next.(dashboardModel)
+	if !m.rows[m.cursor].isGroup || m.rows[m.cursor].group != "work" {
+		t.Fatalf("tick reload moved cursor off group header to row %d", m.cursor)
+	}
+}
+
+func TestDashboardSelectionFilteredOut(t *testing.T) {
+	m := newDashboardModel()
+	m.busy = ""
+	m.entries = []dbEntry{
+		{db: &state.Database{Name: "app_pg", Provider: "postgres", Port: 5432, Group: "work"}},
+		{db: &state.Database{Name: "blog_mysql", Provider: "mysql", Port: 3306, Group: ""}},
+	}
+	m.applyFilter()
+
+	// Select app_pg, then filter it out: cursor must land on a db row, not a header.
+	m.cursor = 1
+	m.filterInput.SetValue("blog")
+	m.applyFilter()
+	if sel := m.selected(); sel == nil || sel.db.Name != "blog_mysql" {
+		t.Fatalf("expected fallback to blog_mysql, got cursor row %d", m.cursor)
+	}
+}
+
 func TestDashboardModalsAndResponsiveLayout(t *testing.T) {
 	m := newDashboardModel()
 	m.busy = ""
