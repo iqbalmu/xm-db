@@ -34,9 +34,12 @@ docker-build:
 	@echo "Building Docker image $(DOCKER_IMAGE)..."
 	docker build -t $(DOCKER_IMAGE) .
 
-# Run in Docker
+# Run in Docker. --network host is required on Linux: xmdb talks to the
+# databases over the host's loopback ports, and root matches /root/.xmdb in
+# the image.
 docker-run: docker-build
 	docker run --rm -it \
+		--network host \
 		-v /var/run/docker.sock:/var/run/docker.sock \
 		-v ${HOME}/.xmdb:/root/.xmdb \
 		$(DOCKER_IMAGE)

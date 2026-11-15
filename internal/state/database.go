@@ -18,7 +18,6 @@ type Database struct {
 	UserPassword  string    `json:"user_password,omitempty"`
 	VolumeName    string    `json:"volume_name,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
-	Status        string    `json:"status"`
 }
 
 func (d *Database) GetUsername() string {

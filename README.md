@@ -33,10 +33,12 @@ container ID.
   `global` by default; assign one at creation with `-g work`, then filter
   views with `xmdb list -g work`.
 - SQL access: `xmdb exec --sql "..."` with table output, plus
-  `xmdb table list` and `xmdb table describe`.
-- Backup and restore: `mysqldump`/`pg_dump` runs inside the container, and the
-  dump is written to a local file. Restore streams the file through stdin, so
-  large dumps work.
+  `xmdb table list` and `xmdb table describe`. `xmdb exec --file <script>`
+  streams a multi-statement script through the engine's own client inside the
+  container, which supports them on both engines.
+- Backup and restore: `mysqldump`/`pg_dump` runs inside the container and
+  streams the dump straight to a local file; restore streams the file back
+  through stdin. Either direction handles dumps far larger than memory.
 - Connection strings: `xmdb connect <name> [--format string|json|env]`.
 
 ## Installation
@@ -147,7 +149,8 @@ xmdb restore appdb ./dump.sql
 
 - Works with Docker and Podman: on every connect `xmdb` probes candidate
   daemons in order (`$DOCKER_HOST`, `/var/run/docker.sock`, then the rootless
-  and rootful Podman sockets). The first one that answers wins; pin a side with
+  and rootful Podman sockets; on Windows, the Docker Desktop and podman named
+  pipes). The first one that answers wins; pin a side with
   `--runtime docker|podman`.
 - State: one JSON file per database in `~/.xmdb/databases/`, written with
   `0600` permissions (credentials included).

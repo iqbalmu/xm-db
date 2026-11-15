@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 
@@ -19,7 +20,6 @@ import (
 
 const (
 	DefaultStopTimeout  = 10
-	HealthCheckInterval = 1 * time.Second
 	connectProbeTimeout = 1500 * time.Millisecond
 )
 
@@ -34,18 +34,31 @@ type endpoint struct {
 }
 
 // candidateEndpoints lists daemon addresses in probe order for the selected
-// runtime: "auto", "docker" or "podman". A set DOCKER_HOST always wins (the
-// standard override).
-func candidateEndpoints(runtime string) []endpoint {
+// runtime mode: "auto", "docker" or "podman". A set DOCKER_HOST always wins
+// (the standard override).
+func candidateEndpoints(mode string) []endpoint {
 	if host := os.Getenv("DOCKER_HOST"); host != "" {
 		return []endpoint{{"DOCKER_HOST", host}}
 	}
 
+	if runtime.GOOS == "windows" {
+		// Windows has no unix sockets: Docker Desktop serves a named pipe,
+		// and podman machine forwards its API through its own pipe.
+		var out []endpoint
+		if mode == "auto" || mode == "docker" {
+			out = append(out, endpoint{"docker desktop", "npipe:////./pipe/docker_engine"})
+		}
+		if mode == "auto" || mode == "podman" {
+			out = append(out, endpoint{"podman", "npipe:////./pipe/podman"})
+		}
+		return out
+	}
+
 	var out []endpoint
-	if runtime == "auto" || runtime == "docker" {
+	if mode == "auto" || mode == "docker" {
 		out = append(out, endpoint{"docker", "unix:///var/run/docker.sock"})
 	}
-	if runtime == "auto" || runtime == "podman" {
+	if mode == "auto" || mode == "podman" {
 		if dir := os.Getenv("XDG_RUNTIME_DIR"); dir != "" {
 			out = append(out, endpoint{"podman (rootless)", "unix://" + dir + "/podman/podman.sock"})
 		}
@@ -156,24 +169,34 @@ func (d *DockerManager) CreateContainer(ctx context.Context, config *ContainerCo
 	return resp.ID, nil
 }
 
-func (d *DockerManager) StartContainer(ctx context.Context, containerID string) error {
-	return d.client.ContainerStart(ctx, containerID, container.StartOptions{})
+func (d *DockerManager) StartContainer(ctx context.Context, containerID, containerName string) error {
+	return d.client.ContainerStart(ctx, resolveContainerRef(containerID, containerName), container.StartOptions{})
 }
 
-func (d *DockerManager) StopContainer(ctx context.Context, containerID string) error {
+func (d *DockerManager) StopContainer(ctx context.Context, containerID, containerName string) error {
 	timeout := DefaultStopTimeout
-	return d.client.ContainerStop(ctx, containerID, container.StopOptions{Timeout: &timeout})
+	return d.client.ContainerStop(ctx, resolveContainerRef(containerID, containerName), container.StopOptions{Timeout: &timeout})
 }
 
-func (d *DockerManager) RemoveContainer(ctx context.Context, containerID string) error {
-	return d.client.ContainerRemove(ctx, containerID, container.RemoveOptions{
+func (d *DockerManager) RemoveContainer(ctx context.Context, containerID, containerName string) error {
+	return d.client.ContainerRemove(ctx, resolveContainerRef(containerID, containerName), container.RemoveOptions{
 		Force:         true,
 		RemoveVolumes: true,
 	})
 }
 
-func (d *DockerManager) IsContainerRunning(ctx context.Context, containerID string) (bool, error) {
-	inspect, err := d.client.ContainerInspect(ctx, containerID)
+// resolveContainerRef picks the daemon reference for a stored container:
+// the name is stable across recreations, the ID can go stale. The daemon
+// API accepts either form.
+func resolveContainerRef(containerID, containerName string) string {
+	if containerName != "" {
+		return containerName
+	}
+	return containerID
+}
+
+func (d *DockerManager) IsContainerRunning(ctx context.Context, containerID, containerName string) (bool, error) {
+	inspect, err := d.client.ContainerInspect(ctx, resolveContainerRef(containerID, containerName))
 	if err != nil {
 		return false, err
 	}
@@ -181,7 +204,7 @@ func (d *DockerManager) IsContainerRunning(ctx context.Context, containerID stri
 }
 
 // GetContainerLogs retrieves logs from a container
-func (d *DockerManager) GetContainerLogs(ctx context.Context, containerID string, tail string, follow bool) (io.ReadCloser, error) {
+func (d *DockerManager) GetContainerLogs(ctx context.Context, containerID, containerName, tail string, follow bool) (io.ReadCloser, error) {
 	options := container.LogsOptions{
 		ShowStdout: true,
 		ShowStderr: true,
@@ -189,30 +212,33 @@ func (d *DockerManager) GetContainerLogs(ctx context.Context, containerID string
 		Tail:       tail,
 		Timestamps: true,
 	}
-	return d.client.ContainerLogs(ctx, containerID, options)
+	return d.client.ContainerLogs(ctx, resolveContainerRef(containerID, containerName), options)
 }
 
-// ExecResult holds the captured output and exit status of a finished exec.
+// ExecResult reports the captured stderr and exit status of a finished exec.
+// Stdout is streamed straight to the caller's writer and never buffered, so
+// dumps of any size pass through without piling up in memory.
 type ExecResult struct {
-	Stdout   string
 	Stderr   string
 	ExitCode int
 }
 
-// Exec runs cmd in the container, optionally feeding stdin to it, and returns
-// the captured output. err reports transport failures only; check ExitCode for
-// the command's own status.
-func (d *DockerManager) Exec(ctx context.Context, containerID string, cmd []string, stdin string) (*ExecResult, error) {
+// Exec runs cmd in the container, streaming stdin into it and its stdout into
+// stdout (nil discards), while stderr is captured. err reports transport
+// failures only; check ExitCode for the command's own status.
+func (d *DockerManager) Exec(ctx context.Context, containerID, containerName string, cmd []string, stdin io.Reader, stdout io.Writer) (*ExecResult, error) {
+	ref := resolveContainerRef(containerID, containerName)
+
 	execConfig := container.ExecOptions{
 		AttachStdout: true,
 		AttachStderr: true,
 		Cmd:          cmd,
 	}
-	if stdin != "" {
+	if stdin != nil {
 		execConfig.AttachStdin = true
 	}
 
-	execID, err := d.client.ContainerExecCreate(ctx, containerID, execConfig)
+	execID, err := d.client.ContainerExecCreate(ctx, ref, execConfig)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create exec: %w", err)
 	}
@@ -223,12 +249,13 @@ func (d *DockerManager) Exec(ctx context.Context, containerID string, cmd []stri
 	}
 	defer resp.Close()
 
-	// Write stdin concurrently: a large dump can fill the pipe while the
+	// Pump stdin concurrently: a large dump can fill the pipe while the
 	// command's output fills ours, which would deadlock on sequential I/O.
+	// Copying the reader concurrently drains output at the same time.
 	stdinErr := make(chan error, 1)
-	if stdin != "" {
+	if stdin != nil {
 		go func() {
-			_, err := resp.Conn.Write([]byte(stdin))
+			_, err := io.Copy(resp.Conn, stdin)
 			if err == nil {
 				resp.CloseWrite()
 			}
@@ -236,11 +263,17 @@ func (d *DockerManager) Exec(ctx context.Context, containerID string, cmd []stri
 		}()
 	}
 
-	var stdout, stderr bytes.Buffer
-	if _, err := stdcopy.StdCopy(&stdout, &stderr, resp.Reader); err != nil {
+	var stderr bytes.Buffer
+	out := stdout
+	if out == nil {
+		out = io.Discard
+	}
+	if _, err := stdcopy.StdCopy(out, &stderr, resp.Reader); err != nil {
 		return nil, fmt.Errorf("failed to read exec output: %w", err)
 	}
-	if stdin != "" {
+	if stdin != nil {
+		// The exec stream closes when the command finishes, so a stuck write
+		// cannot outlive StdCopy.
 		if err := <-stdinErr; err != nil {
 			return nil, fmt.Errorf("failed to write stdin: %w", err)
 		}
@@ -252,22 +285,9 @@ func (d *DockerManager) Exec(ctx context.Context, containerID string, cmd []stri
 	}
 
 	return &ExecResult{
-		Stdout:   stdout.String(),
 		Stderr:   stderr.String(),
 		ExitCode: inspect.ExitCode,
 	}, nil
-}
-
-// ExecCommand runs cmd in the container and fails if it exits non-zero.
-func (d *DockerManager) ExecCommand(ctx context.Context, containerID string, cmd []string) (string, error) {
-	res, err := d.Exec(ctx, containerID, cmd, "")
-	if err != nil {
-		return "", err
-	}
-	if res.ExitCode != 0 {
-		return "", fmt.Errorf("command failed (exit %d): %s", res.ExitCode, res.Stderr)
-	}
-	return res.Stdout, nil
 }
 
 // VolumeExists reports whether a named volume exists.

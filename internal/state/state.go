@@ -37,9 +37,16 @@ func (m *Manager) Save(db *Database) error {
 	if err != nil {
 		return fmt.Errorf("failed to marshal database state: %w", err)
 	}
-	// Credentials are stored in these files, so keep them owner-only.
-	if err := os.WriteFile(filePath, data, 0o600); err != nil {
+	// Credentials are stored in these files, so keep them owner-only. Write
+	// to a temp file and rename it into place: a crash mid-write cannot then
+	// leave a truncated state file behind.
+	tmpPath := filePath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o600); err != nil {
 		return fmt.Errorf("failed to write state file: %w", err)
+	}
+	if err := os.Rename(tmpPath, filePath); err != nil {
+		os.Remove(tmpPath)
+		return fmt.Errorf("failed to replace state file: %w", err)
 	}
 	return nil
 }

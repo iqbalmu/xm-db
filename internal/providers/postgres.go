@@ -39,9 +39,22 @@ func (p *PostgresProvider) GetEnvVars(config *DBConfig) []string {
 	}
 }
 
+// GetConnectionString returns a display form of the connection details.
 func (p *PostgresProvider) GetConnectionString(config *DBConfig) string {
 	user, password := config.Auth("postgres")
+	return postgresURL(config, user, password, 0)
+}
 
+// Connect opens a sql.DB over a URL DSN; unlike MySQL's format this one
+// percent-escapes the credentials, so special characters are safe.
+func (p *PostgresProvider) Connect(config *DBConfig) (*sql.DB, error) {
+	user, password := config.Auth("postgres")
+	return sql.Open("postgres", postgresURL(config, user, password, connectTimeoutSeconds))
+}
+
+// postgresURL builds the lib/pq DSN; connectTimeout is included only when
+// positive so the display form stays clean.
+func postgresURL(config *DBConfig, user, password string, connectTimeout int) string {
 	u := url.URL{
 		Scheme: "postgres",
 		Host:   net.JoinHostPort(config.Host, strconv.Itoa(config.Port)),
@@ -50,13 +63,11 @@ func (p *PostgresProvider) GetConnectionString(config *DBConfig) string {
 	u.User = url.UserPassword(user, password)
 	q := u.Query()
 	q.Set("sslmode", "disable")
+	if connectTimeout > 0 {
+		q.Set("connect_timeout", strconv.Itoa(connectTimeout))
+	}
 	u.RawQuery = q.Encode()
 	return u.String()
-}
-
-func (p *PostgresProvider) CreateDatabase(ctx context.Context, db *sql.DB, dbName string) error {
-	_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE %s", QuoteIdentPG(dbName)))
-	return err
 }
 
 func (p *PostgresProvider) CreateUser(ctx context.Context, db *sql.DB, username, password, dbName string) error {
@@ -84,25 +95,6 @@ func (p *PostgresProvider) CreateUser(ctx context.Context, db *sql.DB, username,
 		QuoteIdentPG(dbName), user,
 	))
 	return err
-}
-
-func (p *PostgresProvider) ListDatabases(ctx context.Context, db *sql.DB) ([]string, error) {
-	rows, err := db.QueryContext(ctx,
-		"SELECT datname FROM pg_database WHERE datistemplate = false")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var databases []string
-	for rows.Next() {
-		var dbName string
-		if err := rows.Scan(&dbName); err != nil {
-			continue
-		}
-		databases = append(databases, dbName)
-	}
-	return databases, nil
 }
 
 func (p *PostgresProvider) ListTables(ctx context.Context, db *sql.DB, dbName string) ([]string, error) {

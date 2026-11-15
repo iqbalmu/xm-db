@@ -12,13 +12,6 @@ const (
 	DefaultPasswordLength = 16
 )
 
-func GetDriverName(provider string) string {
-	if provider == ProviderPostgres {
-		return "postgres"
-	}
-	return "mysql"
-}
-
 func GeneratePassword(length int) (string, error) {
 	if length <= 0 {
 		length = DefaultPasswordLength

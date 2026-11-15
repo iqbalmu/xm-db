@@ -55,7 +55,7 @@ curl -fsSL -o "$TMP/checksums.txt" "$BASE/checksums.txt" ||
 	fail "download failed: checksums.txt"
 
 msg "==> Verifying checksum…"
-WANT=$(grep "$ASSET" "$TMP/checksums.txt" | awk '{print $1}')
+WANT=$(awk -v a="$ASSET" '$2 == a {print $1; exit}' "$TMP/checksums.txt")
 [ -n "$WANT" ] || fail "no checksum found for $ASSET"
 if command -v sha256sum >/dev/null 2>&1; then
 	GOT=$(sha256sum "$TMP/$ASSET" | awk '{print $1}')

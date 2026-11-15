@@ -50,7 +50,7 @@ func runBackup(name string) {
 
 	ctx := context.Background()
 
-	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
+	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if err != nil || !running {
 		color.Red("Error: Database '%s' is not running", name)
 		return
@@ -85,23 +85,28 @@ func runBackup(name string) {
 		}
 	}
 
-	res, err := dockerMgr.Exec(ctx, db.ContainerID, cmd, "")
+	// Owner-only file: the dump contains database data and is streamed
+	// straight to disk, never buffered whole in memory.
+	dumpFile, err := os.OpenFile(absPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
+		color.Red("Error creating backup file: %v", err)
+		return
+	}
+
+	res, err := dockerMgr.Exec(ctx, db.ContainerID, db.ContainerName, cmd, nil, dumpFile)
+	dumpFile.Close()
+	if err != nil {
+		os.Remove(absPath) // a partial dump is worse than none
 		color.Red("Error creating backup: %v", err)
 		return
 	}
 	if res.ExitCode != 0 {
+		os.Remove(absPath)
 		color.Red("Error creating backup (exit %d):\n%s", res.ExitCode, res.Stderr)
 		return
 	}
 	if res.Stderr != "" {
 		color.Yellow("Warnings:\n%s", res.Stderr)
-	}
-
-	// Owner-only: the dump contains database data.
-	if err := os.WriteFile(absPath, []byte(res.Stdout), 0o600); err != nil {
-		color.Red("Error writing backup file: %v", err)
-		return
 	}
 
 	fileInfo, _ := os.Stat(absPath)

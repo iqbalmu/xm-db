@@ -72,7 +72,7 @@ func runList() {
 		status := "stopped"
 
 		if db.ContainerID != "" {
-			running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
+			running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 			if err == nil && running {
 				status = "running"
 			}

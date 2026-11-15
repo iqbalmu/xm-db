@@ -26,7 +26,6 @@ func sampleDB(name string) *Database {
 		UserPassword:  "devpw",
 		VolumeName:    "xmdb_" + name + "_data",
 		CreatedAt:     time.Now(),
-		Status:        "running",
 	}
 }
 

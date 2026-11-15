@@ -39,7 +39,7 @@ func runStart(name string) {
 
 	ctx := context.Background()
 
-	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
+	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if err != nil {
 		color.Red("Error checking container status: %v", err)
 		return
@@ -52,7 +52,7 @@ func runStart(name string) {
 
 	color.Cyan("▶️  Starting database '%s'...", name)
 
-	if err := dockerMgr.StartContainer(ctx, db.ContainerID); err != nil {
+	if err := dockerMgr.StartContainer(ctx, db.ContainerID, db.ContainerName); err != nil {
 		color.Red("Error starting container: %v", err)
 		return
 	}

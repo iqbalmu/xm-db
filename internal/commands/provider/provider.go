@@ -29,18 +29,17 @@ func init() {
 
 func runList() {
 	titleColor := color.New(color.FgCyan, color.Bold)
-	titleColor.Println("\n📦 Available Database Providers:")
+	titleColor.Println("\n📦 Supported Database Providers:")
 
-	// Prepare data
 	data := [][]any{
-		{"mysql", providers.DefaultMySQLVersion, providers.DefaultMySQLPort, "✓ Available"},
-		{"postgres", providers.DefaultPostgresVersion, providers.DefaultPostgresPort, "✓ Available"},
+		{"mysql", providers.DefaultMySQLVersion, providers.DefaultMySQLPort},
+		{"postgres", providers.DefaultPostgresVersion, providers.DefaultPostgresPort},
 	}
 
 	fmt.Println()
 
 	table := tablewriter.NewTable(os.Stdout)
-	table.Header("Provider", "Default Version", "Default Port", "Status")
+	table.Header("Provider", "Default Version", "Default Port")
 	table.Bulk(data)
 	table.Render()
 

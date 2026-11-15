@@ -12,6 +12,10 @@ const (
 
 	DefaultMySQLVersion    = "8.0"
 	DefaultPostgresVersion = "16"
+
+	// connectTimeoutSeconds bounds one TCP + handshake attempt, so a hung
+	// dial cannot stall past the caller's own deadline.
+	connectTimeoutSeconds = 5
 )
 
 type Provider interface {
@@ -20,9 +24,10 @@ type Provider interface {
 	GetContainerPort() string
 	GetEnvVars(config *DBConfig) []string
 	GetConnectionString(config *DBConfig) string
-	CreateDatabase(ctx context.Context, db *sql.DB, dbName string) error
+	// Connect opens a working sql.DB for the given config. Passwords that are
+	// awkward in a connection string (MySQL ':', '/', '@') are safe here.
+	Connect(cfg *DBConfig) (*sql.DB, error)
 	CreateUser(ctx context.Context, db *sql.DB, username, password, dbName string) error
-	ListDatabases(ctx context.Context, db *sql.DB) ([]string, error)
 	ListTables(ctx context.Context, db *sql.DB, dbName string) ([]string, error)
 }
 

@@ -3,34 +3,27 @@ FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
-RUN apk add --no-cache git
-
-# Copy go mod files
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy source code
 COPY . .
 
-# Build binary
-RUN CGO_ENABLED=0 GOOS=linux go build -a -installsuffix cgo -o /bin/xmdb ./cmd/xmdb
+# Inject the version; plain `docker build` without the arg shows "dev".
+#   docker build --build-arg VERSION=v1.2.3 -t xm-db .
+ARG VERSION=dev
+RUN CGO_ENABLED=0 go build \
+	-ldflags "-s -w -X github.com/iqbalmu/xm-db/internal/commands.Version=${VERSION}" \
+	-o /bin/xmdb ./cmd/xmdb
 
 # Stage 2: Runtime
 FROM alpine:3.20
 
-# Install ca-certificates for HTTPS
+# ca-certificates for the GitHub release API (xmdb update)
 RUN apk --no-cache add ca-certificates
 
-# Create non-root user
-RUN adduser -D -H -h /app appuser
-
-# Copy binary from builder
+# Runs as root on purpose: it talks to the mounted docker.sock and stores
+# state in /root/.xmdb, which the docker-run target mounts.
 COPY --from=builder /bin/xmdb /usr/local/bin/xmdb
-
-# Switch to non-root user
-USER appuser
 
 ENTRYPOINT ["xmdb"]
 CMD ["--help"]
-

@@ -68,14 +68,14 @@ func runRemove(name string) {
 
 	color.Cyan("🗑️  Removing database '%s'...", name)
 
-	running, _ := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
+	running, _ := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if running {
 		color.White("  Stopping container...")
-		dockerMgr.StopContainer(ctx, db.ContainerID)
+		dockerMgr.StopContainer(ctx, db.ContainerID, db.ContainerName)
 	}
 
 	color.White("  Removing container...")
-	if err := dockerMgr.RemoveContainer(ctx, db.ContainerID); err != nil {
+	if err := dockerMgr.RemoveContainer(ctx, db.ContainerID, db.ContainerName); err != nil {
 		color.Yellow("  Warning: Could not remove container: %v", err)
 	}
 

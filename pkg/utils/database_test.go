@@ -38,15 +38,3 @@ func TestGeneratePasswordNonPositive(t *testing.T) {
 		t.Errorf("length = %d, want default %d", len(pw), DefaultPasswordLength)
 	}
 }
-
-func TestGetDriverName(t *testing.T) {
-	if GetDriverName(ProviderMySQL) != "mysql" {
-		t.Error("mysql driver name wrong")
-	}
-	if GetDriverName(ProviderPostgres) != "postgres" {
-		t.Error("postgres driver name wrong")
-	}
-	if GetDriverName("unknown") != "mysql" {
-		t.Error("unknown provider should fall back to mysql")
-	}
-}

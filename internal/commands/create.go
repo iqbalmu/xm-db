@@ -22,6 +22,7 @@ const (
 	defaultUsername       = "dev_user"
 	containerStartTimeout = 60 * time.Second
 	portProbeTimeout      = 500 * time.Millisecond
+	connectAttemptTimeout = 5 * time.Second
 )
 
 var (
@@ -296,9 +297,9 @@ func runCreate(args []string) {
 	}
 
 	color.White("▶️  Starting container...")
-	if err := dockerMgr.StartContainer(ctx, containerID); err != nil {
+	if err := dockerMgr.StartContainer(ctx, containerID, containerName); err != nil {
 		color.Red("Error starting container: %v", err)
-		cleanup(dockerMgr, ctx, containerID, volumeName)
+		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
 		return
 	}
 
@@ -306,9 +307,9 @@ func runCreate(args []string) {
 	// container runtimes accept host-side TCP connections before the database
 	// listens, so a bare port dial is not proof of readiness.
 	color.White("⏳ Waiting for database to accept connections...")
-	if err := waitForDatabase(ctx, provider, prov, adminConfig, containerStartTimeout); err != nil {
+	if err := waitForDatabase(ctx, prov, adminConfig, containerStartTimeout); err != nil {
 		color.Red("Error: %v", err)
-		cleanup(dockerMgr, ctx, containerID, volumeName)
+		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
 		return
 	}
 
@@ -317,17 +318,17 @@ func runCreate(args []string) {
 	if createUser && username != "" {
 		color.White("👤 Creating user '%s'...", username)
 
-		db, err := sql.Open(utils.GetDriverName(provider), prov.GetConnectionString(adminConfig))
+		db, err := prov.Connect(adminConfig)
 		if err != nil {
 			color.Red("Error connecting to database: %v", err)
-			cleanup(dockerMgr, ctx, containerID, volumeName)
+			cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
 			return
 		}
 
 		if err := prov.CreateUser(ctx, db, username, userPassword, dbName); err != nil {
 			db.Close()
 			color.Red("Error creating user: %v", err)
-			cleanup(dockerMgr, ctx, containerID, volumeName)
+			cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
 			return
 		}
 		db.Close()
@@ -347,7 +348,6 @@ func runCreate(args []string) {
 		UserPassword:  userPassword,
 		VolumeName:    volumeName,
 		CreatedAt:     time.Now(),
-		Status:        "running",
 	}
 
 	if err := stateMgr.Save(dbState); err != nil {
@@ -374,21 +374,25 @@ func runCreate(args []string) {
 	fmt.Println()
 }
 
-// waitForDatabase polls until the server completes a protocol-level handshake.
-func waitForDatabase(ctx context.Context, provider string, prov providers.Provider, cfg *providers.DBConfig, timeout time.Duration) error {
+// waitForDatabase polls until the server completes a protocol-level
+// handshake. Each attempt is bounded by its own timeout, so a hung dial
+// cannot stall past the overall deadline.
+func waitForDatabase(ctx context.Context, prov providers.Provider, cfg *providers.DBConfig, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 
 	for {
-		db, err := sql.Open(utils.GetDriverName(provider), prov.GetConnectionString(cfg))
+		attemptCtx, cancel := context.WithTimeout(ctx, connectAttemptTimeout)
+		db, err := prov.Connect(cfg)
 		if err != nil {
 			lastErr = err
 		} else {
-			lastErr = db.PingContext(ctx)
+			lastErr = db.PingContext(attemptCtx)
 			db.Close()
-			if lastErr == nil {
-				return nil
-			}
+		}
+		cancel()
+		if lastErr == nil {
+			return nil
 		}
 
 		if time.Now().After(deadline) {
@@ -403,11 +407,17 @@ func waitForDatabase(ctx context.Context, provider string, prov providers.Provid
 	}
 }
 
-// cleanup removes a failed creation's container and data volume.
-func cleanup(dockerMgr *container.DockerManager, ctx context.Context, containerID, volumeName string) {
-	dockerMgr.RemoveContainer(ctx, containerID)
+// cleanup removes a failed creation's container and data volume. Failures
+// are reported, not swallowed: a stuck container blocks the next create
+// with the same name.
+func cleanup(dockerMgr *container.DockerManager, ctx context.Context, containerID, containerName, volumeName string) {
+	if err := dockerMgr.RemoveContainer(ctx, containerID, containerName); err != nil {
+		color.Yellow("  Warning: could not clean up container '%s': %v", containerName, err)
+	}
 	if volumeName != "" {
-		dockerMgr.RemoveVolume(ctx, volumeName)
+		if err := dockerMgr.RemoveVolume(ctx, volumeName); err != nil {
+			color.Yellow("  Warning: could not clean up volume '%s': %v", volumeName, err)
+		}
 	}
 }
 

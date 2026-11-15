@@ -50,7 +50,7 @@ func runRestore(name, backupFile string) {
 
 	ctx := context.Background()
 
-	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID)
+	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if err != nil || !running {
 		color.Red("Error: Database '%s' is not running", name)
 		return
@@ -82,11 +82,14 @@ func runRestore(name, backupFile string) {
 		}
 	}
 
-	sqlData, err := os.ReadFile(absPath)
+	// Stream the SQL file through stdin instead of reading it whole: dumps
+	// can far exceed available memory.
+	sqlFile, err := os.Open(absPath)
 	if err != nil {
 		color.Red("Error reading backup file: %v", err)
 		return
 	}
+	defer sqlFile.Close()
 
 	color.Cyan("\n📥 Restoring database '%s' from backup...\n", name)
 
@@ -109,7 +112,7 @@ func runRestore(name, backupFile string) {
 
 	// Pipe the SQL file through stdin: passing it as an argument would hit
 	// exec argument size limits on large dumps.
-	res, err := dockerMgr.Exec(ctx, db.ContainerID, cmd, string(sqlData))
+	res, err := dockerMgr.Exec(ctx, db.ContainerID, db.ContainerName, cmd, sqlFile, os.Stdout)
 	if err != nil {
 		color.Red("Error restoring database: %v", err)
 		return

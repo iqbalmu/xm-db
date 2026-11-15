@@ -50,8 +50,7 @@ func runDescribe(dbName, tableName string) {
 		DatabaseName: dbState.DatabaseName,
 	}
 
-	connStr := prov.GetConnectionString(dbConfig)
-	db, err := sql.Open(utils.GetDriverName(dbState.Provider), connStr)
+	db, err := prov.Connect(dbConfig)
 	if err != nil {
 		color.Red("Error connecting to database: %v", err)
 		return

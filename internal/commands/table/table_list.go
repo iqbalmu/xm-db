@@ -2,13 +2,11 @@ package table
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 
 	"github.com/fatih/color"
 	"github.com/iqbalmu/xm-db/internal/providers"
 	"github.com/iqbalmu/xm-db/internal/state"
-	"github.com/iqbalmu/xm-db/pkg/utils"
 	"github.com/spf13/cobra"
 )
 
@@ -48,8 +46,7 @@ func runList(name string) {
 		DatabaseName: dbState.DatabaseName,
 	}
 
-	connStr := prov.GetConnectionString(dbConfig)
-	db, err := sql.Open(utils.GetDriverName(dbState.Provider), connStr)
+	db, err := prov.Connect(dbConfig)
 	if err != nil {
 		color.Red("Error connecting to database: %v", err)
 		return

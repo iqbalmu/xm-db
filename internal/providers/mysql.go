@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net"
+	"strconv"
+	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	"github.com/go-sql-driver/mysql"
 )
 
 type MySQLProvider struct{}
@@ -36,6 +39,9 @@ func (m *MySQLProvider) GetEnvVars(config *DBConfig) []string {
 	}
 }
 
+// GetConnectionString returns a display form of the connection details. The
+// driver cannot represent passwords containing ':' unambiguously in this
+// format; code that actually connects must use Connect instead.
 func (m *MySQLProvider) GetConnectionString(config *DBConfig) string {
 	user, password := config.Auth("root")
 	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?multiStatements=true",
@@ -46,9 +52,26 @@ func (m *MySQLProvider) GetConnectionString(config *DBConfig) string {
 	)
 }
 
-func (m *MySQLProvider) CreateDatabase(ctx context.Context, db *sql.DB, dbName string) error {
-	_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE IF NOT EXISTS %s", QuoteIdentMySQL(dbName)))
-	return err
+// Connect opens a sql.DB without going through the textual DSN, so passwords
+// with special characters cannot break the parse.
+func (m *MySQLProvider) Connect(config *DBConfig) (*sql.DB, error) {
+	user, password := config.Auth("root")
+
+	dsnCfg := mysql.NewConfig()
+	dsnCfg.User = user
+	dsnCfg.Passwd = password
+	dsnCfg.Net = "tcp"
+	dsnCfg.Addr = net.JoinHostPort(config.Host, strconv.Itoa(config.Port))
+	dsnCfg.DBName = config.DatabaseName
+	dsnCfg.AllowNativePasswords = true
+	dsnCfg.MultiStatements = true
+	dsnCfg.Timeout = 5 * time.Second // dial timeout only; queries stay unbounded
+
+	connector, err := mysql.NewConnector(dsnCfg)
+	if err != nil {
+		return nil, err
+	}
+	return sql.OpenDB(connector), nil
 }
 
 func (m *MySQLProvider) CreateUser(ctx context.Context, db *sql.DB, username, password, dbName string) error {
@@ -72,24 +95,6 @@ func (m *MySQLProvider) CreateUser(ctx context.Context, db *sql.DB, username, pa
 
 	_, err = db.ExecContext(ctx, "FLUSH PRIVILEGES")
 	return err
-}
-
-func (m *MySQLProvider) ListDatabases(ctx context.Context, db *sql.DB) ([]string, error) {
-	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var databases []string
-	for rows.Next() {
-		var dbName string
-		if err := rows.Scan(&dbName); err != nil {
-			continue
-		}
-		databases = append(databases, dbName)
-	}
-	return databases, nil
 }
 
 func (m *MySQLProvider) ListTables(ctx context.Context, db *sql.DB, dbName string) ([]string, error) {

@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -39,9 +40,13 @@ func updateBase() string {
 	return "https://github.com/" + updateRepo
 }
 
+// latestTag resolves the newest release tag. GitHub's JSON API rate-limits
+// per IP, so the default source follows the releases/latest redirect to the
+// tag page instead; custom bases keep serving their own JSON manifest.
 func latestTag(base string) (string, error) {
-	url := "https://api.github.com/repos/" + updateRepo + "/releases/latest"
-	if base != "https://github.com/"+updateRepo {
+	defaultBase := "https://github.com/" + updateRepo
+	url := defaultBase + "/releases/latest"
+	if base != defaultBase {
 		url = base + "/latest.json"
 	}
 
@@ -55,16 +60,25 @@ func latestTag(base string) (string, error) {
 		return "", fmt.Errorf("HTTP %d from %s", resp.StatusCode, url)
 	}
 
-	var release struct {
-		TagName string `json:"tag_name"`
+	if base != defaultBase {
+		var release struct {
+			TagName string `json:"tag_name"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
+			return "", err
+		}
+		if release.TagName == "" {
+			return "", fmt.Errorf("no tag_name in response from %s", url)
+		}
+		return release.TagName, nil
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
-		return "", err
+
+	// The redirect lands on .../tag/<name>; read the tag back off the URL.
+	tag := path.Base(resp.Request.URL.Path)
+	if !strings.HasPrefix(tag, "v") {
+		return "", fmt.Errorf("could not determine the latest tag from %s", url)
 	}
-	if release.TagName == "" {
-		return "", fmt.Errorf("no tag_name in response from %s", url)
-	}
-	return release.TagName, nil
+	return tag, nil
 }
 
 func isUpToDate(current, tag string) bool {

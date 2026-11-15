@@ -55,7 +55,7 @@ func runLogs(name string) {
 	color.Cyan("📋 Logs for '%s':\n", name)
 	fmt.Println(color.CyanString("════════════════════════════════════════"))
 
-	logs, err := dockerMgr.GetContainerLogs(ctx, db.ContainerID, logsTail, logsFollow)
+	logs, err := dockerMgr.GetContainerLogs(ctx, db.ContainerID, db.ContainerName, logsTail, logsFollow)
 	if err != nil {
 		color.Red("Error retrieving logs: %v", err)
 		return
