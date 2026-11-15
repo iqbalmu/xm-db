@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/iqbalmu/xm-db/internal/container"
 	"github.com/iqbalmu/xm-db/internal/providers"
 	"github.com/iqbalmu/xm-db/internal/state"
@@ -502,7 +503,7 @@ func (m dashboardModel) View() string {
 
 	// Layout dimensions
 	bodyHeight := max(10, m.height-5)
-	leftWidth := max(28, m.width*36/100)
+	leftWidth := max(32, m.width*40/100)
 	rightWidth := max(36, m.width-leftWidth-4)
 
 	leftPane := m.renderLeftPane(leftWidth, bodyHeight)
@@ -540,8 +541,10 @@ func (m dashboardModel) renderLeftPane(width, height int) string {
 				badge = styleBadgeRun.Render("●")
 			}
 			line := fmt.Sprintf("%s %s (%s:%d) [%s]", badge, e.db.Name, e.db.Provider, e.db.Port, groupLabel(e.db.Group))
-			if len(line) > innerW {
-				line = line[:innerW-1] + "…"
+			if lipgloss.Width(line) > innerW {
+				// Cut by display cells: byte slicing treated the 3-byte
+				// '●' badge as 3 columns, chopping group labels that fit.
+				line = ansi.Truncate(line, innerW-1, "…")
 			}
 			if i == m.cursor {
 				b.WriteString(styleSelectedRow.Width(innerW).Render(line) + "\n")
