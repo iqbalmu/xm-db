@@ -1,9 +1,10 @@
 package commands
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
 	"github.com/iqbalmu/xm-db/internal/state"
 )
@@ -14,6 +15,7 @@ type wizardAction struct {
 }
 
 // runWizard is the interactive menu shown by `xmdb` with no arguments.
+// Esc backs out of any menu (at the top menu it exits), Ctrl+C exits too.
 func runWizard() {
 	groups := []wizardGroup{
 		{
@@ -101,22 +103,18 @@ func pickAndRun(question string, fn func(string)) func() {
 	}
 }
 
-func promptSelect(message string, options []string) (string, bool) {
-	var choice string
-	prompt := &survey.Select{
-		Message: message,
-		Options: options,
-	}
-	if err := survey.AskOne(prompt, &choice); err != nil {
-		return "", false
-	}
-	return choice, true
-}
-
+// waitForEnter pauses until the user presses Enter or Esc; both go back to
+// the menu, Ctrl+C leaves the wizard.
 func waitForEnter() {
-	fmt.Println()
-	cont := ""
-	_ = survey.AskOne(&survey.Input{Message: "Press Enter to return to the menu..."}, &cont)
+	fmt.Println("\nPress Enter or Esc to return to the menu...")
+	if err := waitKey(); err != nil {
+		if errors.Is(err, errInterrupt) {
+			fmt.Println()
+			os.Exit(130)
+		}
+		color.Red("Error: %v", err)
+	}
+	fmt.Print("\x1b[1A\r\x1b[2K\x1b[1A\r\x1b[2K")
 }
 
 // pickDatabase shows a selector over the managed databases and returns the
