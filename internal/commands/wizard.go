@@ -7,23 +7,36 @@ import (
 	"github.com/iqbalmu/xm-db/internal/state"
 )
 
+// navResult reports how a menu or action was left.
+type navResult int
+
+const (
+	navExit navResult = iota // the action ran to completion, or the user chose Exit
+	navBack                  // the user pressed Esc / Back: show the parent menu again
+)
+
 type wizardAction struct {
 	label string
-	run   func()
+	run   func() navResult
 }
 
 // runWizard is the interactive menu shown by `xmdb` with no arguments.
-// One pass: pick an action (and optionally a database), run it, and the
-// program exits. Esc backs out of any menu (at the top menu it exits),
-// Ctrl+C exits too.
+// Esc goes back one level: prompts return to the previous prompt, a group
+// menu returns to the top menu, and at the top menu it ends the program.
+// An action that runs to completion still ends the program.
 func runWizard() {
 	groups := []wizardGroup{
 		{
 			label: "Databases",
 			actions: []wizardAction{
-				{label: "Create a new database", run: func() { runCreate(nil) }},
-				{label: "List all databases", run: func() { runList() }},
-				{label: "Show status of all databases", run: func() { runStatus() }},
+				{label: "Create a new database", run: func() navResult {
+					if runCreate(nil) {
+						return navExit
+					}
+					return navBack
+				}},
+				{label: "List all databases", run: func() navResult { runList(); return navExit }},
+				{label: "Show status of all databases", run: func() navResult { runStatus(); return navExit }},
 				{label: "Start a database", run: pickAndRun("Start which database?", runStart)},
 				{label: "Stop a database", run: pickAndRun("Stop which database?", runStop)},
 				{label: "Remove a database", run: pickAndRun("Remove which database?", runRemove)},
@@ -45,22 +58,25 @@ func runWizard() {
 	}
 	topOptions = append(topOptions, "Command overview", "Exit")
 
-	// One pass: pick an action, run it, and the program exits.
-	choice, ok := promptSelect("What do you want to do?", topOptions)
-	if !ok || choice == "Exit" {
-		fmt.Println()
-		return
-	}
-
-	if choice == "Command overview" {
-		showOverview()
-		return
-	}
-
-	for _, g := range groups {
-		if g.label == choice {
-			runGroupMenu(g)
+	for {
+		choice, ok := promptSelect("What do you want to do?", topOptions)
+		if !ok || choice == "Exit" {
+			fmt.Println()
 			return
+		}
+
+		if choice == "Command overview" {
+			showOverview()
+			return
+		}
+
+		for _, g := range groups {
+			if g.label == choice {
+				if runGroupMenu(g) == navExit {
+					return
+				}
+				break // Esc/Back: show the top menu again
+			}
 		}
 	}
 }
@@ -70,9 +86,9 @@ type wizardGroup struct {
 	actions []wizardAction
 }
 
-// runGroupMenu shows one group's actions; the chosen action runs once and
-// the wizard ends. Esc or Back just skips the action.
-func runGroupMenu(group wizardGroup) {
+// runGroupMenu shows one group's actions. Running an action completes the
+// wizard (navExit); Esc or Back returns to the parent menu (navBack).
+func runGroupMenu(group wizardGroup) navResult {
 	options := make([]string, 0, len(group.actions)+1)
 	for _, a := range group.actions {
 		options = append(options, a.label)
@@ -81,42 +97,47 @@ func runGroupMenu(group wizardGroup) {
 
 	choice, ok := promptSelect(group.label, options)
 	if !ok || choice == "Back" {
-		return
+		return navBack
 	}
 
 	for _, a := range group.actions {
 		if a.label == choice {
-			a.run()
-			return
+			return a.run()
 		}
 	}
+	return navBack
 }
 
-func pickAndRun(question string, fn func(string)) func() {
-	return func() {
-		if name := pickDatabase(question); name != "" {
-			fn(name)
+// pickAndRun asks which database to act on; Esc there goes back to the menu.
+func pickAndRun(question string, fn func(string)) func() navResult {
+	return func() navResult {
+		name, ok := pickDatabase(question)
+		if !ok {
+			return navBack
 		}
+		fn(name)
+		return navExit
 	}
 }
 
 // pickDatabase shows a selector over the managed databases and returns the
-// chosen name, or "" when there is nothing to pick or the user cancels.
-func pickDatabase(question string) string {
+// chosen name; ok=false means the user cancelled (Esc) or there is nothing
+// to pick.
+func pickDatabase(question string) (string, bool) {
 	stateMgr, err := state.NewManager()
 	if err != nil {
 		color.Red("Error: %v", err)
-		return ""
+		return "", false
 	}
 
 	dbs, err := stateMgr.List()
 	if err != nil {
 		color.Red("Error loading databases: %v", err)
-		return ""
+		return "", false
 	}
 	if len(dbs) == 0 {
 		color.Yellow("\nNo databases yet. Pick 'Create a new database' first.")
-		return ""
+		return "", false
 	}
 
 	options := make([]string, len(dbs))
@@ -126,13 +147,13 @@ func pickDatabase(question string) string {
 
 	choice, ok := promptSelect(question, options)
 	if !ok {
-		return ""
+		return "", false
 	}
 
 	for i, o := range options {
 		if o == choice {
-			return dbs[i].Name
+			return dbs[i].Name, true
 		}
 	}
-	return ""
+	return "", false
 }

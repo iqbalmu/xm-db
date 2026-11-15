@@ -53,7 +53,7 @@ func init() {
 	createCmd.Flags().BoolVar(&createWithVolume, "volume", true, "Create with persistent volume (default: true)")
 }
 
-func runCreate(args []string) {
+func runCreate(args []string) bool {
 	var dbName string
 	var provider string
 	var version string
@@ -63,129 +63,18 @@ func runCreate(args []string) {
 	var username string
 	var userPassword string
 
-	// Interactive mode: every prompt cancels with Esc.
+	stateMgr, err := state.NewManager()
+	if err != nil {
+		color.Red("Error: %v", err)
+		return true
+	}
+
+	// Interactive mode: Esc goes back one prompt; Esc at the very first
+	// prompt backs out of create entirely (reported to the caller).
 	if createInteractive || len(args) == 0 {
-		stateMgr, err := state.NewManager()
-		if err != nil {
-			color.Red("Error: %v", err)
-			return
-		}
-
-		var ok bool
-		dbName, ok, err = askText("Database name:", "", false, dbNameValidator(stateMgr))
-		if err != nil {
-			color.Red("Error: %v", err)
-			return
-		}
-		if !ok {
-			color.Yellow("Cancelled.")
-			return
-		}
-
-		if createProvider == "" {
-			choice, ok := promptSelect("Select database provider:", []string{utils.ProviderMySQL, utils.ProviderPostgres})
-			if !ok {
-				color.Yellow("Cancelled.")
-				return
-			}
-			provider = choice
-		} else {
-			provider = createProvider
-		}
-
-		if createVersion == "" {
-			v, ok := chooseVersion(provider)
-			if !ok {
-				color.Yellow("Cancelled.")
-				return
-			}
-			version = v
-		} else {
-			version = createVersion
-		}
-
-		defaultPort := providers.DefaultMySQLPort
-		if provider == utils.ProviderPostgres {
-			defaultPort = providers.DefaultPostgresPort
-		}
-		if createPort != 0 {
-			defaultPort = createPort
-		}
-
-		// Make the port choice obvious: list what is taken and suggest the
-		// next free port when the default is busy.
-		if summary := managedPortSummary(stateMgr); summary != "" {
-			color.Yellow("Ports already used by managed databases: %s", summary)
-		}
-		suggest := defaultPort
-		note := ""
-		if managedPortOwner(stateMgr, defaultPort) != "" || portInUse(defaultPort) {
-			suggest = nextFreePort(stateMgr, defaultPort)
-			note = fmt.Sprintf(" (%d is busy)", defaultPort)
-		}
-
-		portStr, ok, err := askText(fmt.Sprintf("Port%s:", note), strconv.Itoa(suggest), false, portValidator(stateMgr))
-		if err != nil {
-			color.Red("Error: %v", err)
-			return
-		}
-		if !ok {
-			color.Yellow("Cancelled.")
-			return
-		}
-		port, _ = strconv.Atoi(portStr) // the validator guarantees a number
-
-		group, ok, err := askText("Group (Enter for global):", createGroup, false, nil)
-		if err != nil {
-			color.Red("Error: %v", err)
-			return
-		}
-		if !ok {
-			color.Yellow("Cancelled.")
-			return
-		}
-		createGroup = group
-
-		rootPassword, ok, err = askPassword("Root password:", requiredText)
-		if err != nil {
-			color.Red("Error: %v", err)
-			return
-		}
-		if !ok {
-			color.Yellow("Cancelled.")
-			return
-		}
-
-		createUser, ok, err = askConfirm("Create a dedicated user?", true)
-		if err != nil {
-			color.Red("Error: %v", err)
-			return
-		}
-		if !ok {
-			color.Yellow("Cancelled.")
-			return
-		}
-
-		if createUser {
-			username, ok, err = askText("Username:", defaultUsername, false, identifierValidator)
-			if err != nil {
-				color.Red("Error: %v", err)
-				return
-			}
-			if !ok {
-				color.Yellow("Cancelled.")
-				return
-			}
-
-			userPassword, ok, err = askPassword("User password:", requiredText)
-			if err != nil {
-				color.Red("Error: %v", err)
-				return
-			}
-			if !ok {
-				color.Yellow("Cancelled.")
-				return
-			}
+		if !promptCreate(stateMgr, &dbName, &provider, &version, &port,
+			&rootPassword, &createUser, &username, &userPassword) {
+			return false // backed out
 		}
 	} else {
 		dbName = args[0]
@@ -195,20 +84,20 @@ func runCreate(args []string) {
 
 		if provider == "" {
 			color.Red("Error: --provider is required")
-			return
+			return true
 		}
 
 		var err error
 		rootPassword, err = utils.GeneratePassword(utils.DefaultPasswordLength)
 		if err != nil {
 			color.Red("Error generating password: %v", err)
-			return
+			return true
 		}
 
 		userPassword, err = utils.GeneratePassword(utils.DefaultPasswordLength)
 		if err != nil {
 			color.Red("Error generating password: %v", err)
-			return
+			return true
 		}
 
 		username = defaultUsername
@@ -222,21 +111,16 @@ func runCreate(args []string) {
 		}
 	}
 
-	stateMgr, err := state.NewManager()
-	if err != nil {
-		color.Red("Error: %v", err)
 		return
-	}
-
 	if !createInteractive && len(args) != 0 && stateMgr.Exists(dbName) {
 		color.Red("Error: Database '%s' already exists", dbName)
-		return
+		return true
 	}
 
 	prov, err := providers.For(provider)
 	if err != nil {
 		color.Red("Error: %v", err)
-		return
+		return true
 	}
 
 	if port == 0 {
@@ -246,11 +130,11 @@ func runCreate(args []string) {
 	// Refuse ports taken by another managed database or by any local process.
 	if owner := managedPortOwner(stateMgr, port); owner != "" {
 		color.Red("Error: Port %d is already used by database '%s'", port, owner)
-		return
+		return true
 	}
 	if portInUse(port) {
 		color.Red("Error: Port %d is already in use by another process", port)
-		return
+		return true
 	}
 
 	color.Cyan("\nCreating %s database '%s'...\n", provider, dbName)
@@ -402,6 +286,182 @@ func runCreate(args []string) {
 	}
 
 	fmt.Println()
+	return true
+}
+
+// Steps of the guided create flow, in prompt order.
+const (
+	stepName = iota
+	stepProvider
+	stepVersion
+	stepPort
+	stepGroup
+	stepRootPassword
+	stepAskUser
+	stepUsername
+	stepUserPassword
+	stepDone
+)
+
+// promptCreate runs the guided flow as a step machine. Esc returns to the
+// previous prompt; Esc at the very first prompt returns false, which hands
+// control back to the wizard menu. Values already entered are kept and
+// re-offered as defaults when navigating back.
+func promptCreate(
+	stateMgr *state.Manager,
+	dbName, provider, version *string,
+	port *int,
+	rootPassword *string,
+	createUser *bool,
+	username, userPassword *string,
+) bool {
+	for step := stepName; step != stepDone; {
+		back := false
+
+		switch step {
+		case stepName:
+			v, ok, err := askText("Database name:", *dbName, false, dbNameValidator(stateMgr))
+			if err != nil {
+				color.Red("Error: %v", err)
+				return true
+			}
+			back = !ok
+			if !back {
+				*dbName = v
+			}
+
+		case stepProvider:
+			if createProvider != "" {
+				*provider = createProvider
+				break
+			}
+			choice, ok := promptSelectDefault("Select database provider:", []string{utils.ProviderMySQL, utils.ProviderPostgres}, *provider)
+			back = !ok
+			if !back {
+				*provider = choice
+			}
+
+		case stepVersion:
+			if createVersion != "" {
+				*version = createVersion
+				break
+			}
+			v, ok := chooseVersion(*provider)
+			back = !ok
+			if !back {
+				*version = v
+			}
+
+		case stepPort:
+			defaultPort := providers.DefaultMySQLPort
+			if *provider == utils.ProviderPostgres {
+				defaultPort = providers.DefaultPostgresPort
+			}
+			if createPort != 0 {
+				defaultPort = createPort
+			}
+
+			// Make the port choice obvious: list what is taken and suggest
+			// the next free port when the default is busy.
+			if summary := managedPortSummary(stateMgr); summary != "" {
+				color.Yellow("Ports already used by managed databases: %s", summary)
+			}
+			suggest := defaultPort
+			note := ""
+			if managedPortOwner(stateMgr, defaultPort) != "" || portInUse(defaultPort) {
+				suggest = nextFreePort(stateMgr, defaultPort)
+				note = fmt.Sprintf(" (%d is busy)", defaultPort)
+			}
+
+			def := strconv.Itoa(suggest)
+			if *port != 0 {
+				def = strconv.Itoa(*port)
+			}
+			portStr, ok, err := askText(fmt.Sprintf("Port%s:", note), def, false, portValidator(stateMgr))
+			if err != nil {
+				color.Red("Error: %v", err)
+				return true
+			}
+			back = !ok
+			if !back {
+				*port, _ = strconv.Atoi(portStr) // the validator guarantees a number
+			}
+
+		case stepGroup:
+			g, ok, err := askText("Group (Enter for global):", createGroup, false, nil)
+			if err != nil {
+				color.Red("Error: %v", err)
+				return true
+			}
+			back = !ok
+			if !back {
+				createGroup = g
+			}
+
+		case stepRootPassword:
+			v, ok, err := askPassword("Root password:", requiredText)
+			if err != nil {
+				color.Red("Error: %v", err)
+				return true
+			}
+			back = !ok
+			if !back {
+				*rootPassword = v
+			}
+
+		case stepAskUser:
+			v, ok, err := askConfirm("Create a dedicated user?", true)
+			if err != nil {
+				color.Red("Error: %v", err)
+				return true
+			}
+			back = !ok
+			if !back {
+				*createUser = v
+			}
+
+		case stepUsername:
+			if !*createUser {
+				break
+			}
+			v, ok, err := askText("Username:", *username, false, identifierValidator)
+			if err != nil {
+				color.Red("Error: %v", err)
+				return true
+			}
+			back = !ok
+			if !back {
+				*username = v
+			}
+
+		case stepUserPassword:
+			v, ok, err := askPassword("User password:", requiredText)
+			if err != nil {
+				color.Red("Error: %v", err)
+				return true
+			}
+			back = !ok
+			if !back {
+				*userPassword = v
+			}
+		}
+
+		if back {
+			if step == stepName {
+				return false // backed out of create entirely
+			}
+			step--
+			continue
+		}
+
+		if step == stepAskUser && !*createUser {
+			step = stepDone // no user prompts to visit
+			continue
+		}
+
+		step++
+	}
+	return true
 }
 
 // waitForDatabase polls until the server completes a protocol-level

@@ -21,7 +21,8 @@ container ID.
 ## Features
 
 - Interactive wizard: run `xmdb` with no arguments for a menu to pick an
-  action and a database; the action runs once and the program exits.
+  action and a database; a completed action ends the program. Esc backs out
+  one level — previous prompt, then parent menu — and exits at the top.
 - One-command create: pulls the image, creates a named volume, starts the
   container, waits for real protocol-level readiness, and provisions a dev user.
 - MySQL and PostgreSQL: provider abstraction handles engine differences
@@ -30,7 +31,7 @@ container ID.
   setup, or pass flags for automation. Passwords are generated with `crypto/rand`.
   The guided flow lists the ports already in use, suggests the next free one,
   offers the known Docker tags per engine (with manual entry for anything
-  else), and every prompt backs out with Esc.
+  else), and Esc steps back to the previous prompt.
 - Lifecycle by name: `start`, `stop`, `remove`, `logs`, `status`.
 - Groups: organize databases per project or organization. A database is
   `global` by default; assign one at creation with `-g work`, then filter
