@@ -220,7 +220,7 @@ func runCreate(args []string) bool {
 	// container runtimes accept host-side TCP connections before the database
 	// listens, so a bare port dial is not proof of readiness.
 	color.White("Waiting for database to accept connections...")
-	if err := waitForDatabase(ctx, prov, adminConfig, containerStartTimeout); err != nil {
+	if err := waitForDatabase(ctx, dockerMgr, containerID, containerName, prov, adminConfig, containerStartTimeout); err != nil {
 		color.Red("Error: %v", err)
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
 		return true
@@ -458,12 +458,22 @@ func promptCreate(
 
 // waitForDatabase polls until the server completes a protocol-level
 // handshake. Each attempt is bounded by its own timeout, so a hung dial
-// cannot stall past the overall deadline.
-func waitForDatabase(ctx context.Context, prov providers.Provider, cfg *providers.DBConfig, timeout time.Duration) error {
+// cannot stall past the overall deadline. A container that already exited
+// fails fast with its log tail instead of burning the whole timeout, and a
+// timeout is reported with the log tail too.
+func waitForDatabase(ctx context.Context, dockerMgr *container.DockerManager, containerID, containerName string, prov providers.Provider, cfg *providers.DBConfig, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	var lastErr error
 
 	for {
+		if status, err := dockerMgr.ContainerStatus(ctx, containerID, containerName); err == nil && status == "exited" {
+			logs, tailErr := dockerMgr.TailLogs(ctx, containerID, containerName, 20)
+			if tailErr != nil || logs == "" {
+				return fmt.Errorf("database container exited during startup (no logs available)")
+			}
+			return fmt.Errorf("database container exited during startup; last log lines:\n%s", indentBlock(logs))
+		}
+
 		attemptCtx, cancel := context.WithTimeout(ctx, connectAttemptTimeout)
 		db, err := prov.Connect(cfg)
 		if err != nil {
@@ -478,7 +488,11 @@ func waitForDatabase(ctx context.Context, prov providers.Provider, cfg *provider
 		}
 
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout after %v waiting for database (last error: %w)", timeout, lastErr)
+			logs, tailErr := dockerMgr.TailLogs(ctx, containerID, containerName, 10)
+			if tailErr == nil && logs != "" {
+				return fmt.Errorf("timeout after %v waiting for database (last error: %v); container log tail:\n%s", timeout, lastErr, indentBlock(logs))
+			}
+			return fmt.Errorf("timeout after %v waiting for database (last error: %w); inspect the container with: docker logs %s", timeout, lastErr, containerName)
 		}
 
 		select {
@@ -487,6 +501,15 @@ func waitForDatabase(ctx context.Context, prov providers.Provider, cfg *provider
 		case <-time.After(time.Second):
 		}
 	}
+}
+
+// indentBlock prefixes every line so a log tail sits cleanly inside an error.
+func indentBlock(s string) string {
+	lines := strings.Split(s, "\n")
+	for i := range lines {
+		lines[i] = "    " + lines[i]
+	}
+	return strings.Join(lines, "\n")
 }
 
 // cleanup removes a failed creation's container and data volume. Failures

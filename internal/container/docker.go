@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -201,6 +202,37 @@ func (d *DockerManager) IsContainerRunning(ctx context.Context, containerID, con
 		return false, err
 	}
 	return inspect.State.Running, nil
+}
+
+// ContainerStatus returns the daemon's lifecycle status for the container
+// ("running", "exited", "restarting", ...).
+func (d *DockerManager) ContainerStatus(ctx context.Context, containerID, containerName string) (string, error) {
+	inspect, err := d.client.ContainerInspect(ctx, resolveContainerRef(containerID, containerName))
+	if err != nil {
+		return "", err
+	}
+	return inspect.State.Status, nil
+}
+
+// TailLogs returns the last decoded log lines of a container, stdout and
+// stderr merged.
+func (d *DockerManager) TailLogs(ctx context.Context, containerID, containerName string, tail int) (string, error) {
+	reader, err := d.client.ContainerLogs(ctx, resolveContainerRef(containerID, containerName), container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Tail:       strconv.Itoa(tail),
+	})
+	if err != nil {
+		return "", err
+	}
+	defer reader.Close()
+
+	var stdout, stderr bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdout, &stderr, reader); err != nil {
+		return "", err
+	}
+	combined := strings.TrimSpace(stdout.String() + "\n" + stderr.String())
+	return combined, nil
 }
 
 // GetContainerLogs retrieves logs from a container

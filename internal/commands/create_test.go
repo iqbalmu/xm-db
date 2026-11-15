@@ -136,9 +136,9 @@ func TestPortAvailabilityRows(t *testing.T) {
 	// Suggested port is free and equals the default: no extra row.
 	rows := portAvailabilityRows(m, 3307, 3307)
 	want := []string{
-		"  3306  in use  managed database 'app'",
-		"  5432  in use  managed database 'analytics'",
-		"  3307  free    suggested",
+		" 3306  in use  managed database 'app'",
+		" 5432  in use  managed database 'analytics'",
+		" 3307  free    suggested",
 	}
 	if len(rows) != len(want) {
 		t.Fatalf("rows = %v, want %v", rows, want)
@@ -200,7 +200,7 @@ func TestGroupValidator(t *testing.T) {
 			t.Errorf("groupValidator(%q) = %v, want nil", g, err)
 		}
 	}
-	for _, g := range []string{"", " leadingspace", strings.Repeat("a", 31)} {
+	for _, g := range []string{"", "a/b", "tab\tsep", strings.Repeat("a", 31)} {
 		if err := groupValidator(g); err == nil {
 			t.Errorf("groupValidator(%q) = nil, want an error", g)
 		}
