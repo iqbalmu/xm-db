@@ -168,3 +168,41 @@ func TestPortAvailabilityRows(t *testing.T) {
 		t.Errorf("rows missing 'another process' row for busy port %d: %v", busy, rows)
 	}
 }
+
+func TestKnownGroups(t *testing.T) {
+	m := newTestStateManager(t)
+	for _, db := range []*state.Database{
+		{Name: "a", Group: "work"},
+		{Name: "b", Group: "personal"},
+		{Name: "c", Group: "work"}, // duplicate
+		{Name: "d"},                // global: not listed
+	} {
+		if err := m.Save(db); err != nil {
+			t.Fatalf("Save %s: %v", db.Name, err)
+		}
+	}
+
+	got := knownGroups(m)
+	want := []string{"personal", "work"}
+	if len(got) != len(want) {
+		t.Fatalf("knownGroups = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("knownGroups[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestGroupValidator(t *testing.T) {
+	for _, g := range []string{"work", "my projects", "dev-team.v2"} {
+		if err := groupValidator(g); err != nil {
+			t.Errorf("groupValidator(%q) = %v, want nil", g, err)
+		}
+	}
+	for _, g := range []string{"", " leadingspace", strings.Repeat("a", 31)} {
+		if err := groupValidator(g); err == nil {
+			t.Errorf("groupValidator(%q) = nil, want an error", g)
+		}
+	}
+}

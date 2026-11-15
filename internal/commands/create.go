@@ -381,11 +381,10 @@ func promptCreate(
 			}
 
 		case stepGroup:
-			g, ok, err := askText("Group (Enter for global):", createGroup, false, nil)
-			if err != nil {
-				color.Red("Error: %v", err)
-				return true
+			if createGroup != "" {
+				break // -g flag wins, like the provider and version flags
 			}
+			g, ok := chooseGroup(stateMgr, createGroup)
 			back = !ok
 			if !back {
 				createGroup = g
@@ -657,4 +656,60 @@ func chooseVersion(provider string) (string, bool) {
 		return "", false
 	}
 	return version, true
+}
+
+// knownGroups returns the distinct group names already used by managed
+// databases, sorted alphabetically.
+func knownGroups(m *state.Manager) []string {
+	dbs, err := m.List()
+	if err != nil {
+		return nil
+	}
+	seen := map[string]bool{}
+	var groups []string
+	for _, d := range dbs {
+		if d.Group == "" || seen[d.Group] {
+			continue
+		}
+		seen[d.Group] = true
+		groups = append(groups, d.Group)
+	}
+	sort.Strings(groups)
+	return groups
+}
+
+var groupRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9 ._-]{0,29}$`)
+
+func groupValidator(s string) error {
+	if !groupRe.MatchString(strings.TrimSpace(s)) {
+		return errors.New("use letters, digits, '.', '_', '-' or spaces (max 30)")
+	}
+	return nil
+}
+
+// chooseGroup lets the user keep the database ungrouped, pick a group that
+// already exists, or type a new one.
+func chooseGroup(m *state.Manager, current string) (string, bool) {
+	options := append([]string{globalGroupLabel}, knownGroups(m)...)
+	options = append(options, "Type a new group manually")
+
+	choice, ok := promptSelectDefault("Group:", options, current)
+	if !ok {
+		return "", false
+	}
+	if choice == "Type a new group manually" {
+		v, ok, err := askText("Group:", "", false, groupValidator)
+		if err != nil {
+			color.Red("Error: %v", err)
+			return "", false
+		}
+		if !ok {
+			return "", false
+		}
+		choice = strings.TrimSpace(v)
+	}
+	if choice == globalGroupLabel {
+		return "", true // global = ungrouped
+	}
+	return choice, true
 }
