@@ -1,0 +1,330 @@
+package commands
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/charmbracelet/bubbles/textinput"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+)
+
+type modalKind int
+
+const (
+	modalNone modalKind = iota
+	modalHelp
+	modalBackup
+	modalRestore
+	modalCreate
+)
+
+type restoreModalState struct {
+	files      []string
+	cursor     int
+	customMode bool
+	input      textinput.Model
+	confirming string // selected file path awaiting 'y' confirmation
+	errMsg     string
+}
+
+func newBackupInput(dbName string) textinput.Model {
+	ti := textinput.New()
+	ti.CharLimit = 256
+	ti.Width = 48
+	ti.SetValue(fmt.Sprintf("backup_%s_%s.sql", dbName, time.Now().Format("20060102_150405")))
+	ti.Focus()
+	return ti
+}
+
+func newRestoreModalState() restoreModalState {
+	ti := textinput.New()
+	ti.Placeholder = "/path/to/backup.sql"
+	ti.CharLimit = 256
+	ti.Width = 48
+
+	files := listSQLFiles(".")
+	return restoreModalState{
+		files:      files,
+		customMode: len(files) == 0,
+		input:      ti,
+	}
+}
+
+func listSQLFiles(dir string) []string {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		if strings.EqualFold(filepath.Ext(e.Name()), ".sql") {
+			out = append(out, e.Name())
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i] > out[j] })
+	return out
+}
+
+func renderOverlay(baseView, modalBox string, width, height int) string {
+	return lipgloss.Place(width, height, lipgloss.Center, lipgloss.Center, modalBox,
+		lipgloss.WithWhitespaceChars(" "),
+	)
+}
+
+func renderHelpModal(width int) string {
+	w := min(74, max(48, width-8))
+	sections := []struct {
+		title string
+		items [][2]string
+	}{
+		{
+			title: "Navigation & Layout",
+			items: [][2]string{
+				{"↑/k, ↓/j", "Move selection / scroll"},
+				{"←/h, →/l, Tab", "Switch focus between Left & Right panes"},
+				{"Enter / Space", "Expand/collapse group (or inspect table)"},
+				{"1 - 4, [ / ]", "Switch Right pane tab (Info/Logs/Tables/Query)"},
+				{"/", "Filter databases (Left) or search logs (Logs)"},
+			},
+		},
+		{
+			title: "Database & Group Actions",
+			items: [][2]string{
+				{"s", "Start/stop selected database (or entire group)"},
+				{"n", "Create new database"},
+				{"x", "Open interactive SQL shell"},
+				{"b / L", "Backup to SQL file / Restore from SQL file"},
+				{"c / p", "Copy connection string / Toggle password"},
+				{"R / d", "Reset (wipe data) / Remove database"},
+			},
+		},
+		{
+			title: "Logs, Tables & Query",
+			items: [][2]string{
+				{"f", "Toggle live log auto-follow (Logs tab)"},
+				{"n / N", "Next / previous log search match"},
+				{"Esc", "Back to table list / exit search / clear filter"},
+				{"i / Enter", "Focus SQL input (Query tab)"},
+				{"r / ? / q", "Refresh / Toggle help / Quit"},
+			},
+		},
+	}
+
+	var b strings.Builder
+	b.WriteString(styleModalTitle.Render("xm-db Keyboard Shortcuts") + "\n\n")
+	for _, sec := range sections {
+		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(sec.title) + "\n")
+		for _, it := range sec.items {
+			k := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary).Width(16).Render(it[0])
+			b.WriteString("  " + k + it[1] + "\n")
+		}
+		b.WriteString("\n")
+	}
+	b.WriteString(styleMutedText.Render("Press ? or Esc to close"))
+	return styleModal.Width(w).Render(b.String())
+}
+
+func renderBackupModal(dbName string, input textinput.Model, width int) string {
+	w := min(64, max(44, width-8))
+	var b strings.Builder
+	b.WriteString(styleModalTitle.Render(fmt.Sprintf("Backup '%s'", dbName)) + "\n\n")
+	b.WriteString("Output SQL file path:\n")
+	b.WriteString(input.View() + "\n\n")
+	b.WriteString(styleMutedText.Render("Enter: start backup  •  Esc: cancel"))
+	return styleModal.Width(w).Render(b.String())
+}
+
+func renderRestoreModal(dbName string, st restoreModalState, width int) string {
+	w := min(68, max(46, width-8))
+	var b strings.Builder
+	b.WriteString(styleModalTitle.Render(fmt.Sprintf("Restore '%s'", dbName)) + "\n\n")
+
+	if st.confirming != "" {
+		b.WriteString(styleWarningText.Render("WARNING: This will overwrite data in '"+dbName+"'.") + "\n")
+		b.WriteString("File: " + st.confirming + "\n\n")
+		b.WriteString(styleErrorText.Render("Press [y] to confirm restore, any other key to cancel."))
+		return styleModal.Width(w).Render(b.String())
+	}
+
+	if st.customMode {
+		b.WriteString("Enter path to .sql backup file:\n")
+		b.WriteString(st.input.View() + "\n")
+		if st.errMsg != "" {
+			b.WriteString(styleErrorText.Render(st.errMsg) + "\n")
+		}
+		b.WriteString("\n")
+		hint := "Enter: select  •  Esc: cancel"
+		if len(st.files) > 0 {
+			hint = "Enter: select  •  Tab: pick from list  •  Esc: cancel"
+		}
+		b.WriteString(styleMutedText.Render(hint))
+		return styleModal.Width(w).Render(b.String())
+	}
+
+	b.WriteString("Select a .sql file in current directory:\n\n")
+	maxShow := min(len(st.files), 10)
+	start := 0
+	if st.cursor >= maxShow {
+		start = st.cursor - maxShow + 1
+	}
+	end := min(len(st.files), start+maxShow)
+	for i := start; i < end; i++ {
+		prefix := "  "
+		line := st.files[i]
+		if i == st.cursor {
+			prefix = "▸ "
+			b.WriteString(styleSelectedRow.Render(prefix+line) + "\n")
+		} else {
+			b.WriteString(prefix + line + "\n")
+		}
+	}
+	if st.errMsg != "" {
+		b.WriteString("\n" + styleErrorText.Render(st.errMsg) + "\n")
+	}
+	b.WriteString("\n" + styleMutedText.Render("↑/↓: select  •  Enter: restore  •  t: type path  •  Esc: cancel"))
+	return styleModal.Width(w).Render(b.String())
+}
+
+func (m dashboardModel) updateModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch m.modal {
+	case modalHelp:
+		if msg.String() == "?" || msg.String() == "esc" || msg.String() == "q" || msg.String() == "enter" {
+			m.modal = modalNone
+		}
+		return m, nil
+
+	case modalBackup:
+		switch msg.String() {
+		case "esc":
+			m.modal = modalNone
+			return m, m.setToast("Backup cancelled", false)
+		case "enter":
+			sel := m.selected()
+			outPath := strings.TrimSpace(m.backupInput.Value())
+			m.modal = modalNone
+			if sel == nil || outPath == "" {
+				return m, m.setToast("Backup path cannot be empty", true)
+			}
+			m.busy = fmt.Sprintf("Backing up '%s'...", sel.db.Name)
+			return m, tea.Batch(m.spinner.Tick, backupDBCmd(sel.db.Name, outPath))
+		}
+		var cmd tea.Cmd
+		m.backupInput, cmd = m.backupInput.Update(msg)
+		return m, cmd
+
+	case modalRestore:
+		if m.restoreState.confirming != "" {
+			path := m.restoreState.confirming
+			m.restoreState.confirming = ""
+			if strings.ToLower(msg.String()) == "y" {
+				sel := m.selected()
+				m.modal = modalNone
+				if sel != nil {
+					m.busy = fmt.Sprintf("Restoring '%s'...", sel.db.Name)
+					return m, tea.Batch(m.spinner.Tick, restoreDBCmd(sel.db.Name, path))
+				}
+				return m, nil
+			}
+			return m, nil
+		}
+
+		if m.restoreState.customMode {
+			switch msg.String() {
+			case "esc":
+				m.modal = modalNone
+				return m, m.setToast("Restore cancelled", false)
+			case "tab":
+				if len(m.restoreState.files) > 0 {
+					m.restoreState.customMode = false
+					m.restoreState.input.Blur()
+					m.restoreState.errMsg = ""
+				}
+				return m, nil
+			case "enter":
+				p := strings.TrimSpace(m.restoreState.input.Value())
+				if p == "" {
+					m.restoreState.errMsg = "Please enter a file path"
+					return m, nil
+				}
+				if _, err := os.Stat(p); err != nil {
+					m.restoreState.errMsg = fmt.Sprintf("File not found: %s", p)
+					return m, nil
+				}
+				m.restoreState.errMsg = ""
+				m.restoreState.confirming = p
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.restoreState.input, cmd = m.restoreState.input.Update(msg)
+			return m, cmd
+		}
+
+		switch msg.String() {
+		case "esc":
+			m.modal = modalNone
+			return m, m.setToast("Restore cancelled", false)
+		case "t":
+			m.restoreState.customMode = true
+			m.restoreState.input.Focus()
+			return m, textinput.Blink
+		case "up", "k":
+			if m.restoreState.cursor > 0 {
+				m.restoreState.cursor--
+			}
+			return m, nil
+		case "down", "j":
+			if m.restoreState.cursor < len(m.restoreState.files)-1 {
+				m.restoreState.cursor++
+			}
+			return m, nil
+		case "enter":
+			if len(m.restoreState.files) > 0 {
+				m.restoreState.confirming = m.restoreState.files[m.restoreState.cursor]
+			}
+			return m, nil
+		}
+		return m, nil
+
+	case modalCreate:
+		if m.createWizard == nil {
+			m.modal = modalNone
+			return m, nil
+		}
+		next, cmd := m.createWizard.Update(msg)
+		cm := next.(createModel)
+		m.createWizard = &cm
+		if cm.quit {
+			m.modal = modalNone
+			m.createWizard = nil
+			return m, m.setToast("Create cancelled", false)
+		}
+		if cm.done {
+			opts := createOptions{
+				Name:         cm.dbName,
+				Provider:     cm.provider,
+				Version:      cm.version,
+				Port:         cm.port,
+				Group:        cm.group,
+				RootPassword: cm.rootPassword,
+				CreateUser:   cm.createUser,
+				Username:     cm.username,
+				UserPassword: cm.userPassword,
+				WithVolume:   true,
+			}
+			m.modal = modalNone
+			m.createWizard = nil
+			m.busy = fmt.Sprintf("Creating '%s' (%s)...", opts.Name, opts.Provider)
+			return m, tea.Batch(m.spinner.Tick, createDBCmd(opts))
+		}
+		return m, cmd
+	}
+	return m, nil
+}

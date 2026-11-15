@@ -108,63 +108,123 @@ func runCreate(args []string) (bool, error) {
 		}
 	}
 
-	if !createInteractive && len(args) != 0 && stateMgr.Exists(dbName) {
-		return true, fmt.Errorf("database '%s' already exists", dbName)
-	}
-
-	prov, err := providers.For(provider)
-	if err != nil {
-		return true, err
-	}
-
-	if port == 0 {
-		port = prov.GetDefaultPort()
-	}
-
-	// Refuse ports taken by another managed database or by any local process.
-	if owner := managedPortOwner(stateMgr, port); owner != "" {
-		return true, fmt.Errorf("port %d is already used by database '%s'", port, owner)
-	}
-	if portInUse(port) {
-		return true, fmt.Errorf("port %d is already in use by another process", port)
+	opts := createOptions{
+		Name:         dbName,
+		Provider:     provider,
+		Version:      version,
+		Port:         port,
+		Group:        strings.TrimSpace(createGroup),
+		RootPassword: rootPassword,
+		CreateUser:   createUser,
+		Username:     username,
+		UserPassword: userPassword,
+		WithVolume:   createWithVolume,
 	}
 
 	color.Cyan("\nCreating %s database '%s'...\n", provider, dbName)
-
-	ctx := context.Background()
-	dockerMgr, err := container.NewDockerManager(runtimeMode)
+	dbState, dbConfig, err := provisionDatabase(context.Background(), stateMgr, opts, func(msg string) {
+		color.White(msg)
+	})
 	if err != nil {
 		return true, err
 	}
 
-	imageName := prov.GetImageName(version)
-	color.White("Pulling image %s...", imageName)
-	if err := dockerMgr.PullImage(ctx, imageName); err != nil {
-		return true, fmt.Errorf("pulling image: %w", err)
+	prov, _ := providers.For(dbState.Provider)
+	color.Green("\nDatabase '%s' created successfully!\n", dbName)
+
+	fmt.Println("Connection Information:")
+	color.Cyan("  Provider: %s", dbState.Provider)
+	color.Cyan("  Port: %d", dbState.Port)
+	color.Cyan("  Database: %s", dbState.DatabaseName)
+
+	if opts.CreateUser && opts.Username != "" {
+		color.Cyan("  User: %s", opts.Username)
+		color.Cyan("  Password: %s", opts.UserPassword)
+		fmt.Println()
+
+		color.White("Connection String:")
+		fmt.Printf("  %s\n", prov.GetConnectionString(dbConfig))
 	}
 
-	containerName := fmt.Sprintf("xmdb_%s", dbName)
+	fmt.Println()
+	return true, nil
+}
+
+type createOptions struct {
+	Name         string
+	Provider     string
+	Version      string
+	Port         int
+	Group        string
+	RootPassword string
+	CreateUser   bool
+	Username     string
+	UserPassword string
+	WithVolume   bool
+}
+
+// provisionDatabase creates, starts, and initializes a database container without
+// writing to stdout; progress updates are delivered via onProgress if non-nil.
+func provisionDatabase(ctx context.Context, stateMgr *state.Manager, opts createOptions, onProgress func(string)) (*state.Database, *providers.DBConfig, error) {
+	report := func(msg string) {
+		if onProgress != nil {
+			onProgress(msg)
+		}
+	}
+
+	if stateMgr.Exists(opts.Name) {
+		return nil, nil, fmt.Errorf("database '%s' already exists", opts.Name)
+	}
+
+	prov, err := providers.For(opts.Provider)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	port := opts.Port
+	if port == 0 {
+		port = prov.GetDefaultPort()
+	}
+	if owner := managedPortOwner(stateMgr, port); owner != "" {
+		return nil, nil, fmt.Errorf("port %d is already used by database '%s'", port, owner)
+	}
+	if portInUse(port) {
+		return nil, nil, fmt.Errorf("port %d is already in use by another process", port)
+	}
+
+	dockerMgr, err := container.NewDockerManager(runtimeMode)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	imageName := prov.GetImageName(opts.Version)
+	report(fmt.Sprintf("Pulling image %s...", imageName))
+	if err := dockerMgr.PullImage(ctx, imageName); err != nil {
+		return nil, nil, fmt.Errorf("pulling image: %w", err)
+	}
+
+	containerName := fmt.Sprintf("xmdb_%s", opts.Name)
 	volumeName := ""
 	var volumePath string
-	if createWithVolume {
-		volumeName = fmt.Sprintf("xmdb_%s_data", dbName)
-		volumePath = prov.GetVolumePath(version)
+	if opts.WithVolume {
+		volumeName = fmt.Sprintf("xmdb_%s_data", opts.Name)
+		volumePath = prov.GetVolumePath(opts.Version)
 
 		if exists, err := dockerMgr.VolumeExists(ctx, volumeName); err == nil && exists {
 			// Images skip first-time init on an existing volume, so the new
 			// credentials would never apply and creation would stall. Refuse
 			// instead of hanging.
-			return true, fmt.Errorf("volume '%s' already holds data from a previous database; remove it with 'docker volume rm %s' or pass --volume=false", volumeName, volumeName)
+			return nil, nil, fmt.Errorf("volume '%s' already holds data from a previous database; remove it with 'docker volume rm %s' or pass --volume=false", volumeName, volumeName)
 		}
 	}
 
 	dbConfig := &providers.DBConfig{
 		Host:         "127.0.0.1",
 		Port:         port,
-		RootPassword: rootPassword,
-		DatabaseName: dbName,
-		User:         username,
-		UserPassword: userPassword,
+		RootPassword: opts.RootPassword,
+		DatabaseName: opts.Name,
+		User:         opts.Username,
+		UserPassword: opts.UserPassword,
 	}
 
 	containerConfig := &container.ContainerConfig{
@@ -182,88 +242,71 @@ func runCreate(args []string) (bool, error) {
 	adminConfig := &providers.DBConfig{
 		Host:         "127.0.0.1",
 		Port:         port,
-		RootPassword: rootPassword,
-		DatabaseName: dbName,
+		RootPassword: opts.RootPassword,
+		DatabaseName: opts.Name,
 	}
 
-	color.White("Creating container...")
+	report("Creating container...")
 	containerID, err := dockerMgr.CreateContainer(ctx, containerConfig)
 	if err != nil {
-		return true, fmt.Errorf("creating container: %w", err)
+		return nil, nil, fmt.Errorf("creating container: %w", err)
 	}
 
-	color.White("Starting container...")
+	report("Starting container...")
 	if err := dockerMgr.StartContainer(ctx, containerID, containerName); err != nil {
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-		return true, fmt.Errorf("starting container: %w", err)
+		return nil, nil, fmt.Errorf("starting container: %w", err)
 	}
 
 	// Wait until the server answers a real protocol handshake. Rootless
 	// container runtimes accept host-side TCP connections before the database
 	// listens, so a bare port dial is not proof of readiness.
-	color.White("Waiting for database to accept connections...")
+	report("Waiting for database to accept connections...")
 	if err := waitForDatabase(ctx, dockerMgr, containerID, containerName, prov, adminConfig, containerStartTimeout); err != nil {
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-		return true, err
+		return nil, nil, err
 	}
 
 	// Create user if requested. Fail hard instead of saving credentials that
 	// do not exist.
-	if createUser && username != "" {
-		color.White("Creating user '%s'...", username)
+	if opts.CreateUser && opts.Username != "" {
+		report(fmt.Sprintf("Creating user '%s'...", opts.Username))
 
 		db, err := prov.Connect(adminConfig)
 		if err != nil {
 			cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-			return true, fmt.Errorf("connecting to database: %w", err)
+			return nil, nil, fmt.Errorf("connecting to database: %w", err)
 		}
 
-		if err := prov.CreateUser(ctx, db, username, userPassword, dbName); err != nil {
+		if err := prov.CreateUser(ctx, db, opts.Username, opts.UserPassword, opts.Name); err != nil {
 			db.Close()
 			cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-			return true, fmt.Errorf("creating user: %w", err)
+			return nil, nil, fmt.Errorf("creating user: %w", err)
 		}
 		db.Close()
 	}
 
 	dbState := &state.Database{
-		Name:          dbName,
-		Provider:      provider,
-		Version:       version,
-		Group:         strings.TrimSpace(createGroup),
+		Name:          opts.Name,
+		Provider:      opts.Provider,
+		Version:       opts.Version,
+		Group:         strings.TrimSpace(opts.Group),
 		ContainerName: containerName,
 		ContainerID:   containerID,
 		Port:          port,
-		RootPassword:  rootPassword,
-		DatabaseName:  dbName,
-		User:          username,
-		UserPassword:  userPassword,
+		RootPassword:  opts.RootPassword,
+		DatabaseName:  opts.Name,
+		User:          opts.Username,
+		UserPassword:  opts.UserPassword,
 		VolumeName:    volumeName,
 		CreatedAt:     time.Now(),
 	}
 
 	if err := stateMgr.Save(dbState); err != nil {
-		return true, fmt.Errorf("saving state: %w", err)
+		return nil, nil, fmt.Errorf("saving state: %w", err)
 	}
 
-	color.Green("\nDatabase '%s' created successfully!\n", dbName)
-
-	fmt.Println("Connection Information:")
-	color.Cyan("  Provider: %s", provider)
-	color.Cyan("  Port: %d", port)
-	color.Cyan("  Database: %s", dbName)
-
-	if createUser && username != "" {
-		color.Cyan("  User: %s", username)
-		color.Cyan("  Password: %s", userPassword)
-		fmt.Println()
-
-		color.White("Connection String:")
-		fmt.Printf("  %s\n", prov.GetConnectionString(dbConfig))
-	}
-
-	fmt.Println()
-	return true, nil
+	return dbState, dbConfig, nil
 }
 
 // Steps of the guided create flow, in prompt order.

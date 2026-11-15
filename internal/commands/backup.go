@@ -30,39 +30,56 @@ func init() {
 }
 
 func runBackup(name string) error {
-	stateMgr, err := state.NewManager()
+	color.Cyan("\nCreating backup for '%s'...\n", name)
+
+	absPath, sizeBytes, stderr, err := backupDatabase(context.Background(), name, backupOutput)
 	if err != nil {
 		return err
+	}
+	if stderr != "" {
+		color.Yellow("Warnings:\n%s", stderr)
+	}
+
+	size := float64(sizeBytes) / 1024 / 1024 // MB
+	color.Green("\nBackup created successfully!\n")
+	color.Cyan("  File: %s", absPath)
+	color.Cyan("  Size: %.2f MB", size)
+	fmt.Println()
+	return nil
+}
+
+// backupDatabase dumps the named database to outputPath (or a timestamped
+// default in the current working directory if empty) without writing to stdout.
+func backupDatabase(ctx context.Context, name, outputPath string) (string, int64, string, error) {
+	stateMgr, err := state.NewManager()
+	if err != nil {
+		return "", 0, "", err
 	}
 
 	db, err := stateMgr.Load(name)
 	if err != nil {
-		return fmt.Errorf("database '%s' not found", name)
+		return "", 0, "", fmt.Errorf("database '%s' not found", name)
 	}
 
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
-		return err
+		return "", 0, "", err
 	}
-
-	ctx := context.Background()
 
 	running, err := dockerMgr.IsContainerRunning(ctx, db.ContainerID, db.ContainerName)
 	if err != nil || !running {
-		return fmt.Errorf("database '%s' is not running", name)
+		return "", 0, "", fmt.Errorf("database '%s' is not running", name)
 	}
 
-	if backupOutput == "" {
+	if outputPath == "" {
 		timestamp := time.Now().Format("20060102_150405")
-		backupOutput = fmt.Sprintf("backup_%s_%s.sql", name, timestamp)
+		outputPath = fmt.Sprintf("backup_%s_%s.sql", name, timestamp)
 	}
 
-	absPath, err := filepath.Abs(backupOutput)
+	absPath, err := filepath.Abs(outputPath)
 	if err != nil {
-		return fmt.Errorf("invalid output path: %w", err)
+		return "", 0, "", fmt.Errorf("invalid output path: %w", err)
 	}
-
-	color.Cyan("\nCreating backup for '%s'...\n", name)
 
 	var cmd []string
 	if db.Provider == utils.ProviderMySQL {
@@ -84,29 +101,24 @@ func runBackup(name string) error {
 	// straight to disk, never buffered whole in memory.
 	dumpFile, err := os.OpenFile(absPath, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("creating backup file: %w", err)
+		return "", 0, "", fmt.Errorf("creating backup file: %w", err)
 	}
 
 	res, err := dockerMgr.Exec(ctx, db.ContainerID, db.ContainerName, cmd, nil, dumpFile)
 	dumpFile.Close()
 	if err != nil {
 		os.Remove(absPath) // a partial dump is worse than none
-		return fmt.Errorf("creating backup: %w", err)
+		return "", 0, "", fmt.Errorf("creating backup: %w", err)
 	}
 	if res.ExitCode != 0 {
 		os.Remove(absPath)
-		return fmt.Errorf("creating backup (exit %d):\n%s", res.ExitCode, res.Stderr)
-	}
-	if res.Stderr != "" {
-		color.Yellow("Warnings:\n%s", res.Stderr)
+		return "", 0, "", fmt.Errorf("creating backup (exit %d):\n%s", res.ExitCode, res.Stderr)
 	}
 
 	fileInfo, _ := os.Stat(absPath)
-	size := float64(fileInfo.Size()) / 1024 / 1024 // MB
-
-	color.Green("\nBackup created successfully!\n")
-	color.Cyan("  File: %s", absPath)
-	color.Cyan("  Size: %.2f MB", size)
-	fmt.Println()
-	return nil
+	var sizeBytes int64
+	if fileInfo != nil {
+		sizeBytes = fileInfo.Size()
+	}
+	return absPath, sizeBytes, res.Stderr, nil
 }

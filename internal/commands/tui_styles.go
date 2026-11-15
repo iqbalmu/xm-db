@@ -33,6 +33,10 @@ var (
 				Foreground(lipgloss.Color("15")).
 				Background(colorHighlight)
 
+	styleGroupHeader = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(colorAccent)
+
 	styleTabActive = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(colorPrimary).
@@ -48,12 +52,27 @@ var (
 			Foreground(lipgloss.Color("250")).
 			Width(14)
 
-	styleMutedText = lipgloss.NewStyle().Foreground(colorMuted)
-	styleErrorText = lipgloss.NewStyle().Bold(true).Foreground(colorDanger)
-	styleToastOK   = lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
-	styleToastErr  = lipgloss.NewStyle().Bold(true).Foreground(colorDanger)
-	styleBadgeRun  = lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
-	styleBadgeStop = lipgloss.NewStyle().Foreground(colorMuted)
+	styleMutedText   = lipgloss.NewStyle().Foreground(colorMuted)
+	styleErrorText   = lipgloss.NewStyle().Bold(true).Foreground(colorDanger)
+	styleWarningText = lipgloss.NewStyle().Bold(true).Foreground(colorWarning)
+	styleToastOK     = lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
+	styleToastErr    = lipgloss.NewStyle().Bold(true).Foreground(colorDanger)
+	styleBadgeRun    = lipgloss.NewStyle().Bold(true).Foreground(colorSuccess)
+	styleBadgeStop   = lipgloss.NewStyle().Foreground(colorMuted)
+
+	styleSearchMatch = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("0")).
+				Background(colorWarning)
+
+	styleModal = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(colorPrimary).
+			Padding(1, 2)
+
+	styleModalTitle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorPrimary)
 
 	styleHelpBar = lipgloss.NewStyle().
 			Foreground(colorMuted).

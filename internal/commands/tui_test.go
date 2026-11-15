@@ -96,3 +96,95 @@ func TestDashboardModelFilterAndTabs(t *testing.T) {
 		t.Fatalf("expected confirmMode cleared on cancel, got %q", m.confirmMode)
 	}
 }
+
+func TestDashboardGroupCollapseAndPaneFocus(t *testing.T) {
+	m := newDashboardModel()
+	m.busy = ""
+	m.entries = []dbEntry{
+		{db: &state.Database{Name: "app_pg", Provider: "postgres", Port: 5432, Group: "work"}, running: true},
+		{db: &state.Database{Name: "api_mysql", Provider: "mysql", Port: 3306, Group: "work"}, running: false},
+		{db: &state.Database{Name: "local_pg", Provider: "postgres", Port: 5433, Group: ""}},
+	}
+	m.applyFilter()
+
+	// Rows: [group:work, api_mysql, app_pg, group:global, local_pg] -> 5 rows
+	if len(m.rows) != 5 {
+		t.Fatalf("expected 5 rows, got %d", len(m.rows))
+	}
+	// Cursor should land on first DB item (index 1)
+	if m.selected() == nil || m.selected().db.Name != "api_mysql" {
+		t.Fatalf("expected api_mysql selected, got %+v", m.selected())
+	}
+
+	// Move up to group header and collapse it
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m = next.(dashboardModel)
+	if !m.rows[m.cursor].isGroup || m.rows[m.cursor].group != "work" {
+		t.Fatalf("expected cursor on 'work' group header")
+	}
+
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m = next.(dashboardModel)
+	if !m.collapsedGroups["work"] {
+		t.Fatalf("expected 'work' group to be collapsed")
+	}
+	if len(m.rows) != 3 {
+		t.Fatalf("expected 3 rows after collapse, got %d", len(m.rows))
+	}
+
+	// Switch pane focus right/left
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	m = next.(dashboardModel)
+	if m.focusPane != 1 {
+		t.Fatalf("expected focusPane=1, got %d", m.focusPane)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	m = next.(dashboardModel)
+	if m.focusPane != 0 {
+		t.Fatalf("expected focusPane=0, got %d", m.focusPane)
+	}
+}
+
+func TestDashboardModalsAndResponsiveLayout(t *testing.T) {
+	m := newDashboardModel()
+	m.busy = ""
+	m.entries = []dbEntry{
+		{db: &state.Database{Name: "app_pg", Provider: "postgres", Port: 5432}, running: true},
+	}
+	m.applyFilter()
+
+	// Help modal
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'?'}})
+	m = next.(dashboardModel)
+	if m.modal != modalHelp {
+		t.Fatalf("expected modalHelp, got %v", m.modal)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(dashboardModel)
+	if m.modal != modalNone {
+		t.Fatalf("expected modalNone after Esc, got %v", m.modal)
+	}
+
+	// Backup modal on running DB
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'b'}})
+	m = next.(dashboardModel)
+	if m.modal != modalBackup {
+		t.Fatalf("expected modalBackup, got %v", m.modal)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	m = next.(dashboardModel)
+	if m.modal != modalNone {
+		t.Fatalf("expected modalNone after Esc, got %v", m.modal)
+	}
+
+	// Responsive stacked layout when width < 80
+	next, _ = m.Update(tea.WindowSizeMsg{Width: 70, Height: 28})
+	m = next.(dashboardModel)
+	stacked, _, _, _, _ := m.layoutDimensions()
+	if !stacked {
+		t.Fatalf("expected stacked=true for width=70")
+	}
+	if v := m.View(); v == "" {
+		t.Fatalf("expected non-empty View()")
+	}
+}
