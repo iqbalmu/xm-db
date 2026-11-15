@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
