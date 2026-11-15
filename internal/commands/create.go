@@ -2,7 +2,6 @@ package commands
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"net"
 	"strconv"
