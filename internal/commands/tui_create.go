@@ -38,15 +38,15 @@ type createModel struct {
 	userPassword string
 
 	// UI state
-	input          textinput.Model
-	customMode     bool // true when entering manual version or new group
-	options        []string
-	cursor         int
-	validationErr  string
-	portHints      []string
-	suggestPort    int
-	defaultPort    int
-	width          int
+	input         textinput.Model
+	customMode    bool // true when entering manual version or new group
+	options       []string
+	cursor        int
+	validationErr string
+	portHints     []string
+	suggestPort   int
+	defaultPort   int
+	width         int
 }
 
 func newCreateModel(stateMgr *state.Manager) createModel {
