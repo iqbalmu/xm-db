@@ -227,6 +227,10 @@ func runUpdate() {
 
 	tmpDir := filepath.Join(filepath.Dir(execPath), ".xmdb-update")
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
+		if os.IsPermission(err) {
+			color.Red("No write permission next to %s. Rerun elevated: sudo xmdb update", execPath)
+			return
+		}
 		color.Red("Error creating a temp directory next to the binary: %v", err)
 		return
 	}
@@ -302,7 +306,7 @@ func runUpdate() {
 	} else {
 		if err := os.Rename(staged, execPath); err != nil {
 			if os.IsPermission(err) {
-				color.Red("Permission denied replacing %s. Rerun the installer with elevated rights (sudo sh -c 'curl -fsSL <installer> | sh').", execPath)
+				color.Red("Permission denied replacing %s. Rerun elevated: sudo xmdb update", execPath)
 				return
 			}
 			color.Red("Error installing the new binary: %v", err)
