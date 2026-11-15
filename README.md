@@ -20,30 +20,33 @@ container ID.
 
 ## Features
 
-- Interactive wizard: run `xmdb` with no arguments for a menu to pick an
-  action and a database; a completed action ends the program. Esc backs out
-  one level — previous prompt, then parent menu — and exits at the top.
-- One-command create: pulls the image, creates a named volume, starts the
+- **Interactive TUI dashboard**: run `xmdb` with no arguments for a split-pane
+  terminal dashboard with collapsible groups, live status, Info/Logs/Tables/Query
+  tabs, and inline modals for creating, backing up, restoring, resetting, and
+  removing databases.
+- **One-command create**: pulls the image, creates a named volume, starts the
   container, waits for real protocol-level readiness, and provisions a dev user.
-- MySQL and PostgreSQL: provider abstraction handles engine differences
+  Run `xmdb create` with no arguments for the guided modal/wizard, or pass flags
+  for automation. Passwords are generated with `crypto/rand`.
+- **MySQL and PostgreSQL**: provider abstraction handles engine differences
   (images, ports, env vars, user grants, connection strings).
-- Interactive or scripted: run `xmdb create` with no arguments for guided
-  setup, or pass flags for automation. Passwords are generated with `crypto/rand`.
-  The guided flow lists the ports already in use, suggests the next free one,
-  offers the known Docker tags per engine (with manual entry for anything
-  else), and Esc steps back to the previous prompt.
-- Lifecycle by name: `start`, `stop`, `remove`, `logs`, `status`.
-- Groups: organize databases per project or organization. A database is
+- **Lifecycle by name or group**: `start`, `stop`, `remove`, `reset`, `logs`,
+  `status`. Start or stop an entire group at once with `-g <group|global>`.
+- **Groups**: organize databases per project or organization. A database is
   `global` by default; assign one at creation with `-g work`, then filter
   views with `xmdb list -g work`.
-- SQL access: `xmdb exec --sql "..."` with table output, plus
-  `xmdb table list` and `xmdb table describe`. `xmdb exec --file <script>`
-  streams a multi-statement script through the engine's own client inside the
-  container, which supports them on both engines.
-- Backup and restore: `mysqldump`/`pg_dump` runs inside the container and
-  streams the dump straight to a local file; restore streams the file back
-  through stdin. Either direction handles dumps far larger than memory.
-- Connection strings: `xmdb connect <name> [--format string|json|env]`.
+- **SQL access & interactive shell**: `xmdb shell <name>` drops straight into
+  `psql` or `mysql` inside the container. `xmdb exec --sql "..."` runs queries
+  with table or `--json` output, `xmdb exec --file <script>` streams
+  multi-statement scripts, and `xmdb table list` / `xmdb table describe` inspect
+  schemas.
+- **Backup, restore, and reset**: `mysqldump`/`pg_dump` runs inside the
+  container and streams the dump straight to a local file; restore streams the
+  file back through stdin. `xmdb reset <name>` wipes all data and re-initializes
+  the database with the same port and credentials.
+- **Scriptable output & clipboard**: `--json` output on `list`, `status`,
+  `info`, and `exec`; `xmdb connect <name> [--format string|json|env] [-c|--copy]`
+  copies the connection string to your clipboard.
 
 ## Installation
 
@@ -105,41 +108,69 @@ go build -o xmdb ./cmd/xmdb && sudo mv xmdb /usr/local/bin/
 ## Quick start
 
 ```sh
-# Guided setup
+# Launch the interactive TUI dashboard
+xmdb
+
+# Guided database creation
 xmdb create
 
-# Scripted: postgres on a custom port
-xmdb create appdb --provider postgres --port 55432
+# Scripted: postgres on a custom port in a group
+xmdb create appdb --provider postgres --port 55432 -g work
 
 # Grab credentials / connection string
 xmdb connect appdb
-xmdb connect appdb --format env      # DB_HOST=... DB_PORT=... for .env files
-xmdb connect appdb --format json     # for scripts
+xmdb connect appdb --copy             # copy connection string to clipboard
+xmdb connect appdb --format env       # DB_HOST=... DB_PORT=... for .env files
+xmdb connect appdb --format json      # for scripts
 
-# Inspect and query
+# Inspect, shell, and query
+xmdb shell appdb                      # interactive psql / mysql shell
 xmdb table list appdb
 xmdb table describe appdb users
 xmdb exec appdb --sql "SELECT version();"
+xmdb exec appdb --sql "SELECT * FROM users;" --json
 
-# Backup, restore
+# Backup, restore, reset, and group lifecycle
 xmdb backup appdb -o ./dump.sql
 xmdb restore appdb ./dump.sql
+xmdb reset appdb                      # wipe data, keep port & credentials
+xmdb stop -g work                     # stop all databases in group 'work'
+xmdb start -g work                    # start all databases in group 'work'
 ```
+
+## TUI Dashboard
+
+Running `xmdb` without arguments opens the terminal dashboard:
+
+- **Left pane**: databases grouped by group name (collapsible with `Enter`/`Space`),
+  live running status, and `/` filter.
+- **Right pane**: four tabs (`1`-`4`, `[`/`]`, or `Tab`):
+  - `1` **Info**: container status, host/port, credentials (`p` toggles password
+    visibility, `c` copies connection string).
+  - `2` **Logs**: live container logs (`f` toggles auto-follow, `/` searches
+    logs, `n`/`N` jumps between matches).
+  - `3` **Tables**: browse tables and press `Enter` to inspect schema and rows.
+  - `4` **Query**: press `i` or `Enter` to write and execute SQL inline.
+- **Actions**: `s` start/stop database or group, `n` create database, `x` open
+  SQL shell, `b` backup, `L` restore, `R` reset, `d` remove, `r` refresh, `?`
+  show all shortcuts, `q` quit.
 
 ## Commands
 
 | Command | Description |
 |---|---|
-| `xmdb` | Interactive wizard menu: pick an action, pick a database |
+| `xmdb` | Launch the interactive TUI dashboard |
 | `xmdb create [name] [-p provider] [-v version] [--port N] [-g group] [-i] [--volume=true]` | Create a database (interactive when no name given); `-g` assigns a group, default is global |
-| `xmdb list [-g group\|global]` | List all managed databases, optionally filtered by group |
-| `xmdb status [-g group\|global]` | Live status of all containers, optionally filtered by group |
-| `xmdb start <name>` | Start a stopped database |
-| `xmdb stop <name>` | Stop a running database |
-| `xmdb remove <name> [-f] [--keep-data]` | Remove container and data volume (`--keep-data` keeps the volume) |
-| `xmdb info <name>` | Detailed database information |
-| `xmdb connect <name> [--format string\|json\|env]` | Show connection information |
-| `xmdb exec <name> --sql "..." / --file f.sql` | Execute SQL with table output |
+| `xmdb list [-g group\|global] [--json]` | List all managed databases, optionally filtered by group (aliases: `ls`) |
+| `xmdb status [-g group\|global] [--json]` | Live status of all containers, optionally filtered by group |
+| `xmdb start [name] [-g group\|global]` | Start a stopped database, or all databases in a group |
+| `xmdb stop [name] [-g group\|global]` | Stop a running database, or all databases in a group |
+| `xmdb remove <name> [-f] [--keep-data]` | Remove container and data volume (`--keep-data` keeps the volume; aliases: `rm`, `delete`) |
+| `xmdb reset <name> [-f]` | Wipe all data and re-initialize with the same port and credentials |
+| `xmdb info <name> [--json]` | Detailed database information |
+| `xmdb connect <name> [--format string\|json\|env] [-c\|--copy]` | Show connection information (and optionally copy to clipboard) |
+| `xmdb shell <name>` | Open an interactive SQL shell (`psql`/`mysql`) inside the container (aliases: `sh`, `console`) |
+| `xmdb exec <name> --sql "..." / --file f.sql [--json]` | Execute SQL with table or JSON output |
 | `xmdb logs <name> [-n N] [-f]` | Container logs |
 | `xmdb backup <name> [-o file]` | Dump the database to a local `.sql` file |
 | `xmdb restore <name> <file> [-f]` | Restore from a `.sql` file (prompts before overwriting) |
