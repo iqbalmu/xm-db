@@ -111,7 +111,6 @@ func runCreate(args []string) bool {
 		}
 	}
 
-		return
 	if !createInteractive && len(args) != 0 && stateMgr.Exists(dbName) {
 		color.Red("Error: Database '%s' already exists", dbName)
 		return true
@@ -143,14 +142,14 @@ func runCreate(args []string) bool {
 	dockerMgr, err := container.NewDockerManager(runtimeMode)
 	if err != nil {
 		color.Red("Error: %v", err)
-		return
+		return true
 	}
 
 	imageName := prov.GetImageName(version)
 	color.White("Pulling image %s...", imageName)
 	if err := dockerMgr.PullImage(ctx, imageName); err != nil {
 		color.Red("Error pulling image: %v", err)
-		return
+		return true
 	}
 
 	containerName := fmt.Sprintf("xmdb_%s", dbName)
@@ -171,7 +170,7 @@ func runCreate(args []string) bool {
 			// instead of hanging.
 			color.Red("Error: volume '%s' already holds data from a previous database.", volumeName)
 			fmt.Printf("  Remove it if you do not need the data:\n    docker volume rm %s\n  Or create without persistent storage: xmdb create <name> --volume=false\n", volumeName)
-			return
+			return true
 		}
 	}
 
@@ -207,14 +206,14 @@ func runCreate(args []string) bool {
 	containerID, err := dockerMgr.CreateContainer(ctx, containerConfig)
 	if err != nil {
 		color.Red("Error creating container: %v", err)
-		return
+		return true
 	}
 
 	color.White("Starting container...")
 	if err := dockerMgr.StartContainer(ctx, containerID, containerName); err != nil {
 		color.Red("Error starting container: %v", err)
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-		return
+		return true
 	}
 
 	// Wait until the server answers a real protocol handshake. Rootless
@@ -224,7 +223,7 @@ func runCreate(args []string) bool {
 	if err := waitForDatabase(ctx, prov, adminConfig, containerStartTimeout); err != nil {
 		color.Red("Error: %v", err)
 		cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-		return
+		return true
 	}
 
 	// Create user if requested. Fail hard instead of saving credentials that
@@ -236,14 +235,14 @@ func runCreate(args []string) bool {
 		if err != nil {
 			color.Red("Error connecting to database: %v", err)
 			cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-			return
+			return true
 		}
 
 		if err := prov.CreateUser(ctx, db, username, userPassword, dbName); err != nil {
 			db.Close()
 			color.Red("Error creating user: %v", err)
 			cleanup(dockerMgr, ctx, containerID, containerName, volumeName)
-			return
+			return true
 		}
 		db.Close()
 	}
@@ -266,7 +265,7 @@ func runCreate(args []string) bool {
 
 	if err := stateMgr.Save(dbState); err != nil {
 		color.Red("Error saving state: %v", err)
-		return
+		return true
 	}
 
 	color.Green("\nDatabase '%s' created successfully!\n", dbName)
