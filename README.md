@@ -28,6 +28,9 @@ container ID.
   (images, ports, env vars, user grants, connection strings).
 - Interactive or scripted: run `xmdb create` with no arguments for guided
   setup, or pass flags for automation. Passwords are generated with `crypto/rand`.
+  The guided flow lists the ports already in use, suggests the next free one,
+  offers the known Docker tags per engine (with manual entry for anything
+  else), and every prompt backs out with Esc.
 - Lifecycle by name: `start`, `stop`, `remove`, `logs`, `status`.
 - Groups: organize databases per project or organization. A database is
   `global` by default; assign one at creation with `-g work`, then filter

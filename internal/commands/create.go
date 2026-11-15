@@ -2,13 +2,15 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
+	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/fatih/color"
 	"github.com/iqbalmu/xm-db/internal/container"
 	"github.com/iqbalmu/xm-db/internal/providers"
@@ -61,38 +63,45 @@ func runCreate(args []string) {
 	var username string
 	var userPassword string
 
-	// Interactive mode
+	// Interactive mode: every prompt cancels with Esc.
 	if createInteractive || len(args) == 0 {
-		if err := survey.AskOne(&survey.Input{
-			Message: "Database name:",
-		}, &dbName, survey.WithValidator(survey.Required)); err != nil {
+		stateMgr, err := state.NewManager()
+		if err != nil {
 			color.Red("Error: %v", err)
+			return
+		}
+
+		var ok bool
+		dbName, ok, err = askText("Database name:", "", false, dbNameValidator(stateMgr))
+		if err != nil {
+			color.Red("Error: %v", err)
+			return
+		}
+		if !ok {
+			color.Yellow("Cancelled.")
 			return
 		}
 
 		if createProvider == "" {
-			if err := survey.AskOne(&survey.Select{
-				Message: "Select database provider:",
-				Options: []string{"mysql", "postgres"},
-			}, &provider); err != nil {
-				color.Red("Error: %v", err)
+			choice, ok := promptSelect("Select database provider:", []string{utils.ProviderMySQL, utils.ProviderPostgres})
+			if !ok {
+				color.Yellow("Cancelled.")
 				return
 			}
+			provider = choice
 		} else {
 			provider = createProvider
 		}
 
-		defaultVersion := providers.DefaultMySQLVersion
-		if provider == utils.ProviderPostgres {
-			defaultVersion = providers.DefaultPostgresVersion
-		}
-
-		if err := survey.AskOne(&survey.Input{
-			Message: fmt.Sprintf("Version (default: %s):", defaultVersion),
-			Default: defaultVersion,
-		}, &version); err != nil {
-			color.Red("Error: %v", err)
-			return
+		if createVersion == "" {
+			v, ok := chooseVersion(provider)
+			if !ok {
+				color.Yellow("Cancelled.")
+				return
+			}
+			version = v
+		} else {
+			version = createVersion
 		}
 
 		defaultPort := providers.DefaultMySQLPort
@@ -103,61 +112,78 @@ func runCreate(args []string) {
 			defaultPort = createPort
 		}
 
-		var portStr string
-		if err := survey.AskOne(&survey.Input{
-			Message: fmt.Sprintf("Port (default: %d):", defaultPort),
-			Default: strconv.Itoa(defaultPort),
-		}, &portStr, survey.WithValidator(survey.ComposeValidators(survey.Required, survey.Validator(func(ans interface{}) error {
-			if _, err := strconv.Atoi(ans.(string)); err != nil {
-				return fmt.Errorf("port must be a number")
-			}
-			return nil
-		})))); err != nil {
-			color.Red("Error: %v", err)
-			return
+		// Make the port choice obvious: list what is taken and suggest the
+		// next free port when the default is busy.
+		if summary := managedPortSummary(stateMgr); summary != "" {
+			color.Yellow("Ports already used by managed databases: %s", summary)
 		}
-		parsedPort, err := strconv.Atoi(portStr)
+		suggest := defaultPort
+		note := ""
+		if managedPortOwner(stateMgr, defaultPort) != "" || portInUse(defaultPort) {
+			suggest = nextFreePort(stateMgr, defaultPort)
+			note = fmt.Sprintf(" (%d is busy)", defaultPort)
+		}
+
+		portStr, ok, err := askText(fmt.Sprintf("Port%s:", note), strconv.Itoa(suggest), false, portValidator(stateMgr))
 		if err != nil {
-			color.Red("Error: invalid port '%s'", portStr)
-			return
-		}
-		port = parsedPort
-
-		if err := survey.AskOne(&survey.Input{
-			Message: "Group (Enter for global):",
-		}, &createGroup); err != nil {
 			color.Red("Error: %v", err)
 			return
 		}
+		if !ok {
+			color.Yellow("Cancelled.")
+			return
+		}
+		port, _ = strconv.Atoi(portStr) // the validator guarantees a number
 
-		if err := survey.AskOne(&survey.Password{
-			Message: "Root password:",
-		}, &rootPassword, survey.WithValidator(survey.Required)); err != nil {
+		group, ok, err := askText("Group (Enter for global):", createGroup, false, nil)
+		if err != nil {
 			color.Red("Error: %v", err)
 			return
 		}
+		if !ok {
+			color.Yellow("Cancelled.")
+			return
+		}
+		createGroup = group
 
-		if err := survey.AskOne(&survey.Confirm{
-			Message: "Create a user?",
-			Default: true,
-		}, &createUser); err != nil {
+		rootPassword, ok, err = askPassword("Root password:", requiredText)
+		if err != nil {
 			color.Red("Error: %v", err)
+			return
+		}
+		if !ok {
+			color.Yellow("Cancelled.")
+			return
+		}
+
+		createUser, ok, err = askConfirm("Create a dedicated user?", true)
+		if err != nil {
+			color.Red("Error: %v", err)
+			return
+		}
+		if !ok {
+			color.Yellow("Cancelled.")
 			return
 		}
 
 		if createUser {
-			if err := survey.AskOne(&survey.Input{
-				Message: "Username:",
-				Default: defaultUsername,
-			}, &username); err != nil {
+			username, ok, err = askText("Username:", defaultUsername, false, identifierValidator)
+			if err != nil {
 				color.Red("Error: %v", err)
 				return
 			}
+			if !ok {
+				color.Yellow("Cancelled.")
+				return
+			}
 
-			if err := survey.AskOne(&survey.Password{
-				Message: "User password:",
-			}, &userPassword, survey.WithValidator(survey.Required)); err != nil {
+			userPassword, ok, err = askPassword("User password:", requiredText)
+			if err != nil {
 				color.Red("Error: %v", err)
+				return
+			}
+			if !ok {
+				color.Yellow("Cancelled.")
 				return
 			}
 		}
@@ -202,7 +228,7 @@ func runCreate(args []string) {
 		return
 	}
 
-	if stateMgr.Exists(dbName) {
+	if !createInteractive && len(args) != 0 && stateMgr.Exists(dbName) {
 		color.Red("Error: Database '%s' already exists", dbName)
 		return
 	}
@@ -447,4 +473,115 @@ func portInUse(port int) bool {
 	}
 	conn.Close()
 	return true
+}
+
+var (
+	dbNameRe     = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9._-]{0,49}$`)
+	versionRe    = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]*$`)
+	identifierRe = regexp.MustCompile(`^[A-Za-z0-9_]{1,32}$`)
+)
+
+// dbNameValidator rejects names that would break container or volume naming,
+// and names already taken by a managed database.
+func dbNameValidator(m *state.Manager) func(string) error {
+	return func(s string) error {
+		if !dbNameRe.MatchString(s) {
+			return errors.New("use letters, digits, '.', '_' or '-' (max 50, start alphanumeric)")
+		}
+		if m.Exists(s) {
+			return fmt.Errorf("database '%s' already exists", s)
+		}
+		return nil
+	}
+}
+
+// portValidator rejects non-numbers and ports held by a managed database or
+// any other local process.
+func portValidator(m *state.Manager) func(string) error {
+	return func(s string) error {
+		port, err := strconv.Atoi(s)
+		if err != nil || port < 1 || port > 65535 {
+			return errors.New("port must be a number between 1 and 65535")
+		}
+		if owner := managedPortOwner(m, port); owner != "" {
+			return fmt.Errorf("port %d is already used by database '%s'", port, owner)
+		}
+		if portInUse(port) {
+			return fmt.Errorf("port %d is already in use by another process", port)
+		}
+		return nil
+	}
+}
+
+func versionValidator(s string) error {
+	if !versionRe.MatchString(s) {
+		return errors.New("use letters, digits, '.', '_' or '-'")
+	}
+	return nil
+}
+
+func identifierValidator(s string) error {
+	if !identifierRe.MatchString(s) {
+		return errors.New("use letters, digits or '_' (max 32)")
+	}
+	return nil
+}
+
+func requiredText(s string) error {
+	if strings.TrimSpace(s) == "" {
+		return errors.New("value is required")
+	}
+	return nil
+}
+
+// managedPortSummary lists the ports held by managed databases with their
+// names, e.g. "3306 (app), 5432 (analytics)".
+func managedPortSummary(m *state.Manager) string {
+	dbs, err := m.List()
+	if err != nil {
+		return ""
+	}
+	sort.Slice(dbs, func(i, j int) bool { return dbs[i].Port < dbs[j].Port })
+	parts := make([]string, 0, len(dbs))
+	for _, d := range dbs {
+		parts = append(parts, fmt.Sprintf("%d (%s)", d.Port, d.Name))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// nextFreePort returns the first port from start upward that no managed
+// database and no local process holds; start itself when nothing is free
+// within 100 ports.
+func nextFreePort(m *state.Manager, start int) int {
+	for port := start; port < start+100; port++ {
+		if managedPortOwner(m, port) == "" && !portInUse(port) {
+			return port
+		}
+	}
+	return start
+}
+
+// chooseVersion lets the user pick one of the known Docker tags or enter any
+// other tag manually.
+func chooseVersion(provider string) (string, bool) {
+	options := providers.KnownVersions(provider)
+	options = append(options, "Type a version manually")
+
+	choice, ok := promptSelect("Database version:", options)
+	if !ok {
+		return "", false
+	}
+	if choice != "Type a version manually" {
+		return choice, true
+	}
+
+	version, ok, err := askText("Version:", "", false, versionValidator)
+	if err != nil {
+		color.Red("Error: %v", err)
+		return "", false
+	}
+	if !ok {
+		return "", false
+	}
+	return version, true
 }

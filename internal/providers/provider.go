@@ -52,6 +52,16 @@ type DBConfig struct {
 	UserPassword string
 }
 
+// KnownVersions lists Docker tags commonly used for local development,
+// ordered with the default first. Users can always enter any other tag
+// manually.
+func KnownVersions(provider string) []string {
+	if provider == "postgres" {
+		return []string{"16", "17", "18", "15", "14"}
+	}
+	return []string{"8.0", "8.4", "9.0"}
+}
+
 // Auth returns the username and password to connect with, preferring the
 // dedicated user over the superuser account.
 func (c *DBConfig) Auth(superuser string) (string, string) {

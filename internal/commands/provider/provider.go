@@ -3,6 +3,7 @@ package provider
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/fatih/color"
 	"github.com/iqbalmu/xm-db/internal/providers"
@@ -32,14 +33,14 @@ func runList() {
 	titleColor.Println("\nSupported Database Providers:")
 
 	data := [][]any{
-		{"mysql", providers.DefaultMySQLVersion, providers.DefaultMySQLPort},
-		{"postgres", providers.DefaultPostgresVersion, providers.DefaultPostgresPort},
+		{"mysql", providers.DefaultMySQLVersion, providers.DefaultMySQLPort, strings.Join(providers.KnownVersions("mysql"), ", ")},
+		{"postgres", providers.DefaultPostgresVersion, providers.DefaultPostgresPort, strings.Join(providers.KnownVersions("postgres"), ", ")},
 	}
 
 	fmt.Println()
 
 	table := tablewriter.NewTable(os.Stdout)
-	table.Header("Provider", "Default Version", "Default Port")
+	table.Header("Provider", "Default Version", "Default Port", "Known Versions")
 	table.Bulk(data)
 	table.Render()
 
