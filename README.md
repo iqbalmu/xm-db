@@ -157,9 +157,11 @@ xmdb restore appdb ./dump.sql
 - Ports bind to `127.0.0.1` only, so your dev database is not reachable from
   the network. Create refuses ports already used by another managed database or
   any local process.
-- Named volumes (`dbm_<name>_data`) survive container restarts; `xmdb remove`
-  deletes them unless `--keep-data` is passed. Creating a database with the same
-  name as an existing volume reuses it (you'll see a warning).
+- Named volumes (`xmdb_<name>_data`) survive container restarts; `xmdb remove`
+  deletes them unless `--keep-data` is passed. Creating a database when a
+  volume with that name still exists fails fast with instructions, because
+  container images skip init on an existing volume (new credentials would not
+  apply).
 - Readiness: `xmdb create` waits until the server completes a real protocol
   handshake before provisioning users (no fixed sleeps), so it works on slow
   machines and rootless container runtimes alike.

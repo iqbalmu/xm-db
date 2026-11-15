@@ -256,7 +256,12 @@ func runCreate(args []string) {
 		}
 
 		if exists, err := dockerMgr.VolumeExists(ctx, volumeName); err == nil && exists {
-			color.Yellow("⚠️  Reusing existing volume '%s' (contains data from a previous database)", volumeName)
+			// Images skip first-time init on an existing volume, so the new
+			// credentials would never apply and creation would stall. Refuse
+			// instead of hanging.
+			color.Red("Error: volume '%s' already holds data from a previous database.", volumeName)
+			fmt.Printf("  Remove it if you do not need the data:\n    docker volume rm %s\n  Or create without persistent storage: xmdb create <name> --volume=false\n", volumeName)
+			return
 		}
 	}
 
