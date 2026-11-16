@@ -62,12 +62,13 @@ func fetchTableDetail(ctx context.Context, dbState *state.Database, tableName st
 		schemaQ = fmt.Sprintf("DESCRIBE %s", quoted)
 		previewQ = fmt.Sprintf("SELECT * FROM %s LIMIT 25", quoted)
 	} else {
+		schema, tbl := providers.SplitTablePG(tableName)
 		schemaQ = fmt.Sprintf(`
 			SELECT column_name, data_type, is_nullable, COALESCE(column_default, 'NULL')
 			FROM information_schema.columns
-			WHERE table_name = %s
-			ORDER BY ordinal_position`, providers.QuoteLiteralPG(tableName))
-		previewQ = fmt.Sprintf("SELECT * FROM %s LIMIT 25", providers.QuoteIdentPG(tableName))
+			WHERE table_schema = %s AND table_name = %s
+			ORDER BY ordinal_position`, providers.QuoteLiteralPG(schema), providers.QuoteLiteralPG(tbl))
+		previewQ = fmt.Sprintf("SELECT * FROM %s LIMIT 25", providers.QuoteTablePG(tableName))
 	}
 
 	sRows, err := conn.QueryContext(ctx, schemaQ)

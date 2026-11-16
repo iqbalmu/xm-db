@@ -130,8 +130,11 @@ func (p *PostgresProvider) CreateUser(ctx context.Context, db *sql.DB, username,
 }
 
 func (p *PostgresProvider) ListTables(ctx context.Context, db *sql.DB, dbName string) ([]string, error) {
-	rows, err := db.QueryContext(ctx,
-		"SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public'")
+	rows, err := db.QueryContext(ctx, `
+		SELECT CASE WHEN schemaname = 'public' THEN tablename ELSE schemaname || '.' || tablename END
+		FROM pg_catalog.pg_tables
+		WHERE schemaname NOT IN ('pg_catalog', 'information_schema')
+		ORDER BY schemaname = 'public' DESC, schemaname, tablename`)
 	if err != nil {
 		return nil, err
 	}

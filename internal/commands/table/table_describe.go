@@ -59,12 +59,13 @@ func runDescribe(dbName, tableName string) error {
 	if dbState.Provider == utils.ProviderMySQL {
 		rows, err = db.QueryContext(ctx, fmt.Sprintf("DESCRIBE %s", providers.QuoteIdentMySQL(tableName)))
 	} else {
+		schema, tbl := providers.SplitTablePG(tableName)
 		rows, err = db.QueryContext(ctx, fmt.Sprintf(`
 			SELECT column_name, data_type, is_nullable, column_default
 			FROM information_schema.columns
-			WHERE table_name = %s
+			WHERE table_schema = %s AND table_name = %s
 			ORDER BY ordinal_position
-		`, providers.QuoteLiteralPG(tableName)))
+		`, providers.QuoteLiteralPG(schema), providers.QuoteLiteralPG(tbl)))
 	}
 
 	if err != nil {

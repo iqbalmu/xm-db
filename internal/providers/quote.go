@@ -23,3 +23,20 @@ func QuoteIdentPG(name string) string {
 func QuoteLiteralPG(s string) string {
 	return "'" + strings.ReplaceAll(s, "'", "''") + "'"
 }
+
+// SplitTablePG splits an optionally schema-qualified PostgreSQL table name
+// ("schema.table" or "table") into schema (defaulting to "public") and table.
+func SplitTablePG(name string) (schema, table string) {
+	if s, t, ok := strings.Cut(name, "."); ok && s != "" && t != "" {
+		return s, t
+	}
+	return "public", name
+}
+
+// QuoteTablePG quotes an optionally schema-qualified PostgreSQL table name.
+func QuoteTablePG(name string) string {
+	if s, t, ok := strings.Cut(name, "."); ok && s != "" && t != "" {
+		return QuoteIdentPG(s) + "." + QuoteIdentPG(t)
+	}
+	return QuoteIdentPG(name)
+}
