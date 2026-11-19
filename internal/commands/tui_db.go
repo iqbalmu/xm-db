@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
@@ -55,6 +56,7 @@ type sqlQueryResult struct {
 	rows     [][]string
 	affected int64
 	isSelect bool
+	duration time.Duration
 }
 
 func openDBConn(dbState *state.Database) (providers.Provider, *sql.DB, error) {
@@ -142,6 +144,7 @@ func executeQuickSQL(ctx context.Context, dbState *state.Database, query string)
 		query:    q,
 		isSelect: isSelect,
 	}
+	start := time.Now()
 
 	if isSelect {
 		rows, err := conn.QueryContext(ctx, q)
@@ -153,6 +156,7 @@ func executeQuickSQL(ctx context.Context, dbState *state.Database, query string)
 		if err != nil {
 			return nil, err
 		}
+		res.duration = time.Since(start)
 		return res, nil
 	}
 
@@ -162,6 +166,7 @@ func executeQuickSQL(ctx context.Context, dbState *state.Database, query string)
 	}
 	affected, _ := execRes.RowsAffected()
 	res.affected = affected
+	res.duration = time.Since(start)
 	return res, nil
 }
 

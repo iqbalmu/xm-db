@@ -114,8 +114,12 @@ xmdb
 # Guided database creation
 xmdb create
 
-# Scripted: postgres on a custom port in a group
+# Scripted: postgres on a custom port in a group, optionally seeded
 xmdb create appdb --provider postgres --port 55432 -g work
+xmdb create appdb --provider postgres --seed ./migrations
+
+# Clone an existing database (schema + data) into a new instance
+xmdb clone appdb appdb_staging
 
 # Grab credentials / connection string
 xmdb connect appdb
@@ -150,19 +154,23 @@ Running `xmdb` without arguments opens the terminal dashboard:
   - `2` **Logs**: live container logs (`f` toggles auto-follow, `/` searches
     logs, `n`/`N` jumps between matches).
   - `3` **Tables**: browse tables in an interactive 2D ERD diagram (default) or
-    list view (`v` toggles diagram/list, `f` toggles fields, `+`/`-`/`0` zooms,
-    `Shift+arrows` pans, `Enter` inspects schema and rows).
-  - `4` **Query**: press `i` or `Enter` to write and execute SQL inline.
-- **Actions**: `s` start/stop database or group, `n` create database, `x` open
-  SQL shell, `b` backup, `L` restore, `R` reset, `d` remove, `r` refresh, `?`
-  show all shortcuts, `q` quit.
+    list view (`v` toggles diagram/list, `f` toggles fields, `/` filters tables,
+    `+`/`-`/`0` zooms, `Shift+arrows` pans, `Enter` inspects schema and rows,
+    `Q` jumps to Query tab with `SELECT * FROM <table> LIMIT 50;`).
+  - `4` **Query**: press `i` or `Enter` to write and execute SQL inline
+    (`↑`/`↓` browses persistent query history, `e` exports results to CSV/JSON,
+    `c` copies results as JSON).
+- **Actions**: `s` start/stop database or group, `n` create database, `C` clone
+  database, `x` open SQL shell, `b` backup, `L` restore, `R` reset, `d` remove,
+  `r` refresh, `?` show all shortcuts, `q` quit.
 
 ## Commands
 
 | Command | Description |
 |---|---|
 | `xmdb` | Launch the interactive TUI dashboard |
-| `xmdb create [name] [-p provider] [-v version] [--port N] [-g group] [-i] [--volume=true]` | Create a database (interactive when no name given); `-g` assigns a group, default is global |
+| `xmdb create [name] [-p provider] [-v version] [--port N] [-g group] [--seed path] [-i] [--volume=true]` | Create a database (interactive when no name given); `--seed` runs a `.sql` file or directory of `*.sql` files |
+| `xmdb clone <source> <target> [--port N] [-g group] [-v version]` | Clone a managed database and its data into a new instance |
 | `xmdb list [-g group\|global] [--json]` | List all managed databases, optionally filtered by group (aliases: `ls`) |
 | `xmdb status [-g group\|global] [--json]` | Live status of all containers, optionally filtered by group |
 | `xmdb start [name] [-g group\|global]` | Start a stopped database, or all databases in a group |

@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -40,7 +41,12 @@ func (m *dashboardModel) renderTableOverviewToVP() {
 	}
 
 	m.erdLayout = nil
-	content, cursorLine := formatTableOverviewList(m.detailTables, m.tableSchema, m.tableCursor, focused, m.tableShowFields, w)
+	vis := m.visibleTables()
+	if len(vis) == 0 {
+		m.tableOverviewVP.SetContent(styleMutedText.Render("(no matching tables)"))
+		return
+	}
+	content, cursorLine := formatTableOverviewList(vis, m.tableSchema, m.tableCursor, focused, m.tableShowFields, w)
 	m.tableOverviewVP.SetContent(content)
 	// Keep selected table/card visible within viewport.
 	if m.tableOverviewVP.Height > 0 {
@@ -90,13 +96,14 @@ func (m *dashboardModel) renderQueryResultToVP() {
 		m.queryVP.SetContent(styleMutedText.Render("Press 'i' or Enter to type a SQL query."))
 		return
 	}
+	dur := m.queryResult.duration.Round(time.Millisecond)
 	if !m.queryResult.isSelect {
-		m.queryVP.SetContent(styleToastOK.Render(fmt.Sprintf("✓ Query executed (%d row(s) affected)", m.queryResult.affected)))
+		m.queryVP.SetContent(styleToastOK.Render(fmt.Sprintf("✓ Query executed (%d row(s) affected) in %s", m.queryResult.affected, dur)))
 		m.queryVP.GotoTop()
 		return
 	}
 	w := max(24, m.queryVP.Width)
-	header := styleMutedText.Render(fmt.Sprintf("%d row(s) returned (max 200 shown)", len(m.queryResult.rows)))
+	header := styleMutedText.Render(fmt.Sprintf("%d row(s) returned in %s (max 200 shown)", len(m.queryResult.rows), dur))
 	m.queryVP.SetContent(header + "\n\n" + formatCompactTable(m.queryResult.cols, m.queryResult.rows, w))
 	m.queryVP.GotoTop()
 }
@@ -153,6 +160,12 @@ func (m dashboardModel) View() string {
 			name = sel.db.Name
 		}
 		return renderOverlay(base, renderCloneModal(name, m.cloneState, m.width), m.width, m.height)
+	case modalExport:
+		name := ""
+		if sel := m.selected(); sel != nil {
+			name = sel.db.Name
+		}
+		return renderOverlay(base, renderExportModal(name, m.exportState, m.width), m.width, m.height)
 	}
 	return base
 }
@@ -367,8 +380,13 @@ func (m dashboardModel) renderTablesTab() string {
 			b.WriteString(m.erdLayout.canvas.renderWindow(m.erdXOffset, m.erdYOffset, w, h))
 		}
 	} else {
-		status := fmt.Sprintf("%s  %s  •  Enter: inspect  •  v: view  •  f: fields", viewBadge, fieldsBadge)
+		status := fmt.Sprintf("%s  %s  •  Enter: inspect  •  Q: query  •  /: filter  •  v: view  •  f: fields", viewBadge, fieldsBadge)
 		b.WriteString(styleMutedText.Render(status) + "\n")
+		if m.tableFiltering {
+			b.WriteString("Filter: " + m.tableFilterInput.View() + "\n")
+		} else if q := strings.TrimSpace(m.tableFilterInput.Value()); q != "" {
+			b.WriteString(styleMutedText.Render("Filter: "+q+" (Esc to clear)") + "\n")
+		}
 		b.WriteString(m.tableOverviewVP.View())
 	}
 	return b.String()
@@ -376,9 +394,12 @@ func (m dashboardModel) renderTablesTab() string {
 
 func (m dashboardModel) renderQueryTab() string {
 	var b strings.Builder
-	hint := "Press 'i' or Enter to type SQL, Esc to blur"
+	hint := "Press 'i' or Enter to type SQL"
+	if m.queryResult != nil && m.queryResult.isSelect {
+		hint += "  •  e: export CSV/JSON  •  c: copy JSON"
+	}
 	if m.queryInput.Focused() {
-		hint = "Enter: execute SQL  •  Esc: blur"
+		hint = "Enter: execute SQL  •  ↑/↓: history  •  Esc: blur"
 	}
 	b.WriteString("SQL> " + m.queryInput.View() + "\n")
 	b.WriteString(styleMutedText.Render(hint) + "\n\n")
@@ -433,14 +454,14 @@ func (m dashboardModel) footerHelpText() string {
 		return "  [Logs] ↑/↓: scroll  •  f: follow  •  /: search  •  n/N: match  •  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
 	case 2:
 		if m.selectedTable != "" {
-			return "  [Table Detail] ↑/↓: scroll  •  v: view  •  f: fields  •  Esc: back  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+			return "  [Table Detail] ↑/↓: scroll  •  Q: query  •  v: view  •  f: fields  •  Esc: back  •  1-4/Tab: tab  •  ?: help  •  q: quit"
 		}
 		if m.tableViewDiagram {
-			return "  [Tables ERD] ↑/↓: select  •  +/-: zoom  •  Shift+Arrows: pan  •  Enter: inspect  •  v: view  •  f: fields  •  ←/Esc: sidebar  •  ?: help  •  q: quit"
+			return "  [Tables ERD] ↑/↓: select  •  +/-: zoom  •  Shift+Arrows: pan  •  Enter: inspect  •  Q: query  •  v: view  •  f: fields  •  ?: help  •  q: quit"
 		}
-		return "  [Tables] ↑/↓: select  •  Enter: inspect  •  v: view  •  f: fields  •  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+		return "  [Tables] ↑/↓: select  •  /: filter  •  Enter: inspect  •  Q: query  •  v: view  •  f: fields  •  ←/Esc: sidebar  •  ?: help  •  q: quit"
 	case 3:
-		return "  [Query] i/Enter: write SQL  •  ↑/↓: scroll  •  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+		return "  [Query] i/Enter: write SQL  •  e: export  •  c: copy JSON  •  ↑/↓: scroll  •  ←/Esc: sidebar  •  ?: help  •  q: quit"
 	default:
 		return "  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
 	}

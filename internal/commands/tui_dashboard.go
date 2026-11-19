@@ -129,16 +129,21 @@ type dashboardModel struct {
 	tableDetailVP    viewport.Model
 	tableViewDiagram bool
 	tableShowFields  bool
+	tableFiltering   bool
+	tableFilterInput textinput.Model
 	erdXOffset       int
 	erdYOffset       int
 	erdZoom          int // 0=50% (out), 1=100% (normal), 2=150% (in)
 	erdLayout        *erdLayoutResult
 
 	// Query tab
-	queryInput  textinput.Model
-	queryVP     viewport.Model
-	queryResult *sqlQueryResult
-	queryErr    error
+	queryInput   textinput.Model
+	queryVP      viewport.Model
+	queryResult  *sqlQueryResult
+	queryErr     error
+	queryHistory []string
+	queryHistIdx int
+	queryDraft   string
 
 	// Filter
 	filtering   bool
@@ -151,6 +156,7 @@ type dashboardModel struct {
 	restoreState restoreModalState
 	createWizard *createModel
 	cloneState   cloneModalState
+	exportState  exportModalState
 
 	// Status & feedback
 	spinner    spinner.Model
@@ -176,6 +182,11 @@ func newDashboardModel() dashboardModel {
 	qi.CharLimit = 512
 	qi.Width = 48
 
+	tfi := textinput.New()
+	tfi.Placeholder = "filter tables..."
+	tfi.CharLimit = 64
+	tfi.Width = 28
+
 	sp := spinner.New()
 	sp.Spinner = spinner.Dot
 	sp.Style = lipgloss.NewStyle().Foreground(colorWarning)
@@ -186,7 +197,10 @@ func newDashboardModel() dashboardModel {
 		collapsedGroups:  make(map[string]bool),
 		filterInput:      fi,
 		logSearchInput:   lsi,
+		tableFilterInput: tfi,
 		queryInput:       qi,
+		queryHistory:     loadQueryHistory(),
+		queryHistIdx:     -1,
 		logsVP:           viewport.New(50, 18),
 		tableOverviewVP:  viewport.New(50, 18),
 		tableDetailVP:    viewport.New(50, 18),
@@ -492,17 +506,36 @@ func (m *dashboardModel) selectGroupByName(group string) bool {
 	return false
 }
 
+func (m dashboardModel) visibleTables() []string {
+	q := strings.ToLower(strings.TrimSpace(m.tableFilterInput.Value()))
+	if q == "" {
+		return m.detailTables
+	}
+	var out []string
+	for _, tbl := range m.detailTables {
+		if strings.Contains(strings.ToLower(tbl), q) {
+			out = append(out, tbl)
+		}
+	}
+	return out
+}
+
 func (m *dashboardModel) resetRightSubstate() {
 	m.selectedTable = ""
 	m.tableDetail = nil
 	m.tableSchema = nil
 	m.tableCursor = 0
+	m.tableFiltering = false
+	m.tableFilterInput.Blur()
+	m.tableFilterInput.SetValue("")
 	m.erdXOffset = 0
 	m.erdYOffset = 0
 	m.erdLayout = nil
 	m.detailErr = nil
 	m.queryResult = nil
 	m.queryErr = nil
+	m.queryHistIdx = -1
+	m.queryDraft = ""
 }
 
 func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -671,11 +704,61 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// Right-pane table filter active
+		if m.focusPane == 1 && m.activeTab == 2 && m.tableFiltering {
+			switch msg.String() {
+			case "esc":
+				m.tableFiltering = false
+				m.tableFilterInput.Blur()
+				m.tableFilterInput.SetValue("")
+				m.tableCursor = 0
+				m.renderTableOverviewToVP()
+				return m, nil
+			case "enter":
+				m.tableFiltering = false
+				m.tableFilterInput.Blur()
+				m.renderTableOverviewToVP()
+				return m, nil
+			}
+			var cmd tea.Cmd
+			m.tableFilterInput, cmd = m.tableFilterInput.Update(msg)
+			vis := m.visibleTables()
+			if m.tableCursor >= len(vis) {
+				m.tableCursor = max(0, len(vis)-1)
+			}
+			m.renderTableOverviewToVP()
+			return m, cmd
+		}
+
 		// Right-pane Query input focused
 		if m.focusPane == 1 && m.activeTab == 3 && m.queryInput.Focused() {
 			switch msg.String() {
 			case "esc":
 				m.queryInput.Blur()
+				return m, nil
+			case "up":
+				if len(m.queryHistory) > 0 {
+					if m.queryHistIdx == -1 {
+						m.queryDraft = m.queryInput.Value()
+						m.queryHistIdx = len(m.queryHistory) - 1
+					} else if m.queryHistIdx > 0 {
+						m.queryHistIdx--
+					}
+					m.queryInput.SetValue(m.queryHistory[m.queryHistIdx])
+					m.queryInput.CursorEnd()
+				}
+				return m, nil
+			case "down":
+				if m.queryHistIdx != -1 {
+					if m.queryHistIdx < len(m.queryHistory)-1 {
+						m.queryHistIdx++
+						m.queryInput.SetValue(m.queryHistory[m.queryHistIdx])
+					} else {
+						m.queryHistIdx = -1
+						m.queryInput.SetValue(m.queryDraft)
+					}
+					m.queryInput.CursorEnd()
+				}
 				return m, nil
 			case "enter":
 				sel := m.selected()
@@ -686,9 +769,14 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if q == "" {
 					return m, nil
 				}
+				m.queryHistory = recordQueryHistory(m.queryHistory, q)
+				_ = saveQueryHistory(m.queryHistory)
+				m.queryHistIdx = -1
+				m.queryDraft = ""
 				m.busy = "Running query..."
 				return m, tea.Batch(m.spinner.Tick, runQuickSQLCmd(sel.db, q))
 			}
+			m.queryHistIdx = -1
 			var cmd tea.Cmd
 			m.queryInput, cmd = m.queryInput.Update(msg)
 			return m, cmd
@@ -748,6 +836,15 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				m.logSearchInput.Focus()
 				return m, textinput.Blink
 			}
+			if m.activeTab == 2 && m.selectedTable == "" {
+				if m.tableViewDiagram {
+					m.tableViewDiagram = false
+				}
+				m.tableFiltering = true
+				m.tableFilterInput.Focus()
+				m.renderTableOverviewToVP()
+				return m, textinput.Blink
+			}
 			return m, nil
 		}
 		m.filtering = true
@@ -758,6 +855,12 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable != "" {
 			m.selectedTable = ""
 			m.tableDetail = nil
+			m.renderTableOverviewToVP()
+			return m, nil
+		}
+		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable == "" && strings.TrimSpace(m.tableFilterInput.Value()) != "" {
+			m.tableFilterInput.SetValue("")
+			m.tableCursor = 0
 			m.renderTableOverviewToVP()
 			return m, nil
 		}
@@ -876,10 +979,11 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 		} else if m.activeTab == 2 {
-			if m.selectedTable == "" && len(m.detailTables) > 0 && m.tableCursor < len(m.detailTables) {
+			vis := m.visibleTables()
+			if m.selectedTable == "" && len(vis) > 0 && m.tableCursor < len(vis) {
 				sel := m.selected()
 				if sel != nil && sel.running {
-					tName := m.detailTables[m.tableCursor]
+					tName := vis[m.tableCursor]
 					m.selectedTable = tName
 					m.busy = fmt.Sprintf("Inspecting '%s'...", tName)
 					return m, tea.Batch(m.spinner.Tick, loadTableDetailCmd(sel.db, tName))
@@ -990,15 +1094,68 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, tea.Batch(m.spinner.Tick, toggleDBCmd(*sel))
 		}
 
+	case "Q":
+		if m.focusPane == 1 && m.activeTab == 2 {
+			sel := m.selected()
+			if sel == nil || !sel.running {
+				return m, m.setToast("Database must be running to query table", true)
+			}
+			tName := m.selectedTable
+			if tName == "" {
+				vis := m.visibleTables()
+				if len(vis) > 0 && m.tableCursor < len(vis) {
+					tName = vis[m.tableCursor]
+				}
+			}
+			if tName == "" {
+				return m, nil
+			}
+			q := buildTableSelectQuery(sel.db.Provider, tName)
+			m.activeTab = 3
+			m.queryInput.SetValue(q)
+			m.queryInput.Blur()
+			m.queryHistory = recordQueryHistory(m.queryHistory, q)
+			_ = saveQueryHistory(m.queryHistory)
+			m.queryHistIdx = -1
+			m.queryDraft = ""
+			m.busy = "Running query..."
+			return m, tea.Batch(m.spinner.Tick, runQuickSQLCmd(sel.db, q))
+		}
+
+	case "e":
+		if m.focusPane == 1 && m.activeTab == 3 && m.busy == "" {
+			sel := m.selected()
+			if sel == nil || m.queryResult == nil || !m.queryResult.isSelect {
+				return m, m.setToast("Run a SELECT query before exporting", true)
+			}
+			m.exportState = newExportModalState(sel.db.Name)
+			m.modal = modalExport
+			return m, textinput.Blink
+		}
+
 	case "c":
-		if m.focusPane != 1 || m.activeTab != 0 {
+		if m.focusPane != 1 {
 			return m, nil
 		}
-		if sel := m.selected(); sel != nil && sel.connStr != "" {
-			if err := clipboard.WriteAll(sel.connStr); err != nil {
+		if m.activeTab == 0 {
+			if sel := m.selected(); sel != nil && sel.connStr != "" {
+				if err := clipboard.WriteAll(sel.connStr); err != nil {
+					return m, m.setToast(fmt.Sprintf("Clipboard error: %v", err), true)
+				}
+				return m, m.setToast(fmt.Sprintf("Copied connection string for '%s'", sel.db.Name), false)
+			}
+		} else if m.activeTab == 3 {
+			if m.queryResult == nil || !m.queryResult.isSelect {
+				return m, m.setToast("Run a SELECT query before copying", true)
+			}
+			data, err := formatQueryResultJSON(m.queryResult)
+			if err != nil {
+				return m, m.setToast(err.Error(), true)
+			}
+			if err := clipboard.WriteAll(string(data)); err != nil {
 				return m, m.setToast(fmt.Sprintf("Clipboard error: %v", err), true)
 			}
-			return m, m.setToast(fmt.Sprintf("Copied connection string for '%s'", sel.db.Name), false)
+			return m, m.setToast(fmt.Sprintf("Copied %d row(s) as JSON", len(m.queryResult.rows)), false)
 		}
 
 	case "x":
@@ -1084,8 +1241,8 @@ func (m dashboardModel) scrollRight(delta int) (tea.Model, tea.Cmd) {
 			} else {
 				m.tableDetailVP.LineDown(delta)
 			}
-		} else if len(m.detailTables) > 0 {
-			m.tableCursor = max(0, min(len(m.detailTables)-1, m.tableCursor+delta))
+		} else if vis := m.visibleTables(); len(vis) > 0 {
+			m.tableCursor = max(0, min(len(vis)-1, m.tableCursor+delta))
 			m.renderTableOverviewToVP()
 		}
 	case 3:

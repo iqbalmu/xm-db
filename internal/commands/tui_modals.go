@@ -23,7 +23,42 @@ const (
 	modalRestore
 	modalCreate
 	modalClone
+	modalExport
 )
+
+type exportModalState struct {
+	format string // "csv" or "json"
+	input  textinput.Model
+	errMsg string
+}
+
+func newExportModalState(dbName string) exportModalState {
+	ti := textinput.New()
+	ti.CharLimit = 256
+	ti.Width = 48
+	ti.SetValue(fmt.Sprintf("export_%s_%s.csv", dbName, time.Now().Format("20060102_150405")))
+	ti.Focus()
+	return exportModalState{
+		format: "csv",
+		input:  ti,
+	}
+}
+
+func (s *exportModalState) toggleFormat() {
+	val := strings.TrimSpace(s.input.Value())
+	if s.format == "csv" {
+		s.format = "json"
+		if strings.HasSuffix(strings.ToLower(val), ".csv") {
+			s.input.SetValue(val[:len(val)-4] + ".json")
+		}
+	} else {
+		s.format = "csv"
+		if strings.HasSuffix(strings.ToLower(val), ".json") {
+			s.input.SetValue(val[:len(val)-5] + ".csv")
+		}
+	}
+	s.errMsg = ""
+}
 
 type cloneModalState struct {
 	input  textinput.Model
@@ -128,9 +163,12 @@ func renderHelpModal(width int) string {
 			items: [][2]string{
 				{"f", "Toggle log auto-follow (Logs) / table fields (Tables)"},
 				{"v", "Toggle table view: list/table vs diagram (Tables tab)"},
+				{"/", "Filter tables (Tables list) or search logs (Logs)"},
+				{"Q", "Query selected table (Tables -> Query tab)"},
 				{"n / N", "Next / previous log search match"},
 				{"Esc", "Back to table list / exit search / clear filter"},
-				{"i / Enter", "Focus SQL input (Query tab)"},
+				{"i / Enter", "Focus SQL input (Query tab; ↑/↓ for history)"},
+				{"e / c", "Export CSV/JSON or copy JSON result (Query tab)"},
 				{"r / ? / q", "Refresh / Toggle help / Quit"},
 			},
 		},
@@ -170,6 +208,30 @@ func renderCloneModal(sourceName string, st cloneModalState, width int) string {
 		b.WriteString(styleErrorText.Render(st.errMsg) + "\n")
 	}
 	b.WriteString("\n" + styleMutedText.Render("Enter: start clone  •  Esc: cancel"))
+	return styleModal.Width(w).Render(b.String())
+}
+
+func renderExportModal(dbName string, st exportModalState, width int) string {
+	w := min(68, max(46, width-8))
+	var b strings.Builder
+	b.WriteString(styleModalTitle.Render(fmt.Sprintf("Export Query Result (%s)", dbName)) + "\n\n")
+
+	csvPill := "[ CSV ]"
+	jsonPill := "[ JSON ]"
+	if st.format == "csv" {
+		csvPill = styleSelectedRow.Render(" ▸ CSV ")
+		jsonPill = styleMutedText.Render("   JSON ")
+	} else {
+		csvPill = styleMutedText.Render("   CSV ")
+		jsonPill = styleSelectedRow.Render(" ▸ JSON ")
+	}
+	b.WriteString("Format: " + csvPill + "  " + jsonPill + "\n\n")
+	b.WriteString("Output file path:\n")
+	b.WriteString(st.input.View() + "\n")
+	if st.errMsg != "" {
+		b.WriteString(styleErrorText.Render(st.errMsg) + "\n")
+	}
+	b.WriteString("\n" + styleMutedText.Render("Tab: switch format  •  Enter: export  •  Esc: cancel"))
 	return styleModal.Width(w).Render(b.String())
 }
 
@@ -390,6 +452,29 @@ func (m dashboardModel) updateModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.cloneState.input, cmd = m.cloneState.input.Update(msg)
 		m.cloneState.errMsg = ""
+		return m, cmd
+
+	case modalExport:
+		switch msg.String() {
+		case "esc":
+			m.modal = modalNone
+			return m, m.setToast("Export cancelled", false)
+		case "tab", "left", "right":
+			m.exportState.toggleFormat()
+			return m, nil
+		case "enter":
+			outPath := strings.TrimSpace(m.exportState.input.Value())
+			absPath, err := exportQueryResult(m.queryResult, m.exportState.format, outPath)
+			if err != nil {
+				m.exportState.errMsg = err.Error()
+				return m, nil
+			}
+			m.modal = modalNone
+			return m, m.setToast(fmt.Sprintf("Exported %s to %s", strings.ToUpper(m.exportState.format), absPath), false)
+		}
+		var cmd tea.Cmd
+		m.exportState.input, cmd = m.exportState.input.Update(msg)
+		m.exportState.errMsg = ""
 		return m, cmd
 	}
 	return m, nil
