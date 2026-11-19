@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/iqbalmu/xmdb/internal/state"
 )
 
 type modalKind int
@@ -21,7 +22,22 @@ const (
 	modalBackup
 	modalRestore
 	modalCreate
+	modalClone
 )
+
+type cloneModalState struct {
+	input  textinput.Model
+	errMsg string
+}
+
+func newCloneModalState(sourceName string) cloneModalState {
+	ti := textinput.New()
+	ti.CharLimit = 50
+	ti.Width = 44
+	ti.SetValue(sourceName + "_copy")
+	ti.Focus()
+	return cloneModalState{input: ti}
+}
 
 type restoreModalState struct {
 	files      []string
@@ -100,6 +116,7 @@ func renderHelpModal(width int) string {
 			items: [][2]string{
 				{"s", "Start/stop selected database (or entire group)"},
 				{"n", "Create new database"},
+				{"C", "Clone selected database"},
 				{"x", "Open interactive SQL shell"},
 				{"b / L", "Backup to SQL file / Restore from SQL file"},
 				{"c / p", "Copy connection string / Toggle password"},
@@ -140,6 +157,19 @@ func renderBackupModal(dbName string, input textinput.Model, width int) string {
 	b.WriteString("Output SQL file path:\n")
 	b.WriteString(input.View() + "\n\n")
 	b.WriteString(styleMutedText.Render("Enter: start backup  •  Esc: cancel"))
+	return styleModal.Width(w).Render(b.String())
+}
+
+func renderCloneModal(sourceName string, st cloneModalState, width int) string {
+	w := min(64, max(44, width-8))
+	var b strings.Builder
+	b.WriteString(styleModalTitle.Render(fmt.Sprintf("Clone '%s'", sourceName)) + "\n\n")
+	b.WriteString("Target database name (inherits provider, version, group; auto-picks free port):\n")
+	b.WriteString(st.input.View() + "\n")
+	if st.errMsg != "" {
+		b.WriteString(styleErrorText.Render(st.errMsg) + "\n")
+	}
+	b.WriteString("\n" + styleMutedText.Render("Enter: start clone  •  Esc: cancel"))
 	return styleModal.Width(w).Render(b.String())
 }
 
@@ -319,12 +349,47 @@ func (m dashboardModel) updateModalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				Username:     cm.username,
 				UserPassword: cm.userPassword,
 				WithVolume:   true,
+				SeedPath:     cm.seedPath,
 			}
 			m.modal = modalNone
 			m.createWizard = nil
 			m.busy = fmt.Sprintf("Creating '%s' (%s)...", opts.Name, opts.Provider)
 			return m, tea.Batch(m.spinner.Tick, createDBCmd(opts))
 		}
+		return m, cmd
+
+	case modalClone:
+		switch msg.String() {
+		case "esc":
+			m.modal = modalNone
+			return m, m.setToast("Clone cancelled", false)
+		case "enter":
+			sel := m.selected()
+			targetName := strings.TrimSpace(m.cloneState.input.Value())
+			if sel == nil {
+				m.modal = modalNone
+				return m, nil
+			}
+			stateMgr, err := state.NewManager()
+			if err != nil {
+				m.cloneState.errMsg = err.Error()
+				return m, nil
+			}
+			if err := dbNameValidator(stateMgr)(targetName); err != nil {
+				m.cloneState.errMsg = err.Error()
+				return m, nil
+			}
+			m.modal = modalNone
+			m.busy = fmt.Sprintf("Cloning '%s' -> '%s'...", sel.db.Name, targetName)
+			return m, tea.Batch(m.spinner.Tick, cloneDBCmd(cloneOptions{
+				SourceName: sel.db.Name,
+				TargetName: targetName,
+				WithVolume: true,
+			}))
+		}
+		var cmd tea.Cmd
+		m.cloneState.input, cmd = m.cloneState.input.Update(msg)
+		m.cloneState.errMsg = ""
 		return m, cmd
 	}
 	return m, nil

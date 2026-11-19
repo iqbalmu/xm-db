@@ -36,6 +36,7 @@ type createModel struct {
 	createUser   bool
 	username     string
 	userPassword string
+	seedPath     string
 
 	// UI state
 	input         textinput.Model
@@ -164,6 +165,11 @@ func (m *createModel) prepareStep() {
 		m.input.EchoCharacter = '*'
 		m.input.Placeholder = "leave empty to auto-generate"
 		m.input.Focus()
+
+	case stepSeed:
+		m.input.Placeholder = "optional: ./seed.sql or ./migrations (Enter to skip)"
+		m.input.SetValue(m.seedPath)
+		m.input.Focus()
 	}
 }
 
@@ -193,9 +199,7 @@ func (m createModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, tea.Quit
 			}
 			m.step--
-			if m.step == stepUserPassword && !m.createUser {
-				m.step = stepAskUser
-			} else if m.step == stepUsername && !m.createUser {
+			if (m.step == stepUserPassword || m.step == stepUsername) && !m.createUser {
 				m.step = stepAskUser
 			}
 			m.prepareStep()
@@ -346,7 +350,7 @@ func (m createModel) handleEnter() (tea.Model, tea.Cmd) {
 		if !m.createUser {
 			m.username = ""
 			m.userPassword = ""
-			m.step = stepReview
+			m.step = stepSeed
 			m.prepareStep()
 			return m, nil
 		}
@@ -380,6 +384,18 @@ func (m createModel) handleEnter() (tea.Model, tea.Cmd) {
 			val = gen
 		}
 		m.userPassword = val
+		m.step = stepSeed
+		m.prepareStep()
+
+	case stepSeed:
+		val := strings.TrimSpace(m.input.Value())
+		if val != "" {
+			if _, err := collectSeedFiles(val); err != nil {
+				m.validationErr = err.Error()
+				return m, nil
+			}
+		}
+		m.seedPath = val
 		m.step = stepReview
 		m.prepareStep()
 
@@ -403,13 +419,13 @@ func (m createModel) View() string {
 }
 
 func (m createModel) stepProgress() (int, int) {
-	total := 8
+	total := 9
 	if m.createUser {
-		total = 10
+		total = 11
 	}
 	cur := m.step + 1
-	if !m.createUser && m.step == stepReview {
-		cur = total
+	if !m.createUser && m.step >= stepSeed {
+		cur -= 2
 	}
 	if cur > total {
 		cur = total
@@ -447,6 +463,13 @@ func (m createModel) renderSummaryGrid(innerWidth int) string {
 		} else {
 			pairs = append(pairs, [2]string{"Dev User", "(none)"})
 		}
+	}
+	if m.step > stepSeed {
+		seedLabel := "(none)"
+		if m.seedPath != "" {
+			seedLabel = m.seedPath
+		}
+		pairs = append(pairs, [2]string{"Seed", seedLabel})
 	}
 	if len(pairs) == 0 {
 		return ""
@@ -566,6 +589,8 @@ func (m createModel) stepPromptTitle() string {
 		return fmt.Sprintf("Dev username (default %s):", defaultUsername)
 	case stepUserPassword:
 		return fmt.Sprintf("Password for '%s':", m.username)
+	case stepSeed:
+		return "Seed SQL file or directory (optional):"
 	case stepReview:
 		return "Review configuration:"
 	}
@@ -573,15 +598,15 @@ func (m createModel) stepPromptTitle() string {
 }
 
 // runCreateTUI launches the Bubble Tea interactive create flow.
-func runCreateTUI(stateMgr *state.Manager) (dbName, provider, version string, port int, group, rootPassword string, createUser bool, username, userPassword string, ok bool) {
+func runCreateTUI(stateMgr *state.Manager) (dbName, provider, version string, port int, group, rootPassword string, createUser bool, username, userPassword, seedPath string, ok bool) {
 	p := tea.NewProgram(newCreateModel(stateMgr))
 	res, err := p.Run()
 	if err != nil {
-		return "", "", "", 0, "", "", false, "", "", false
+		return "", "", "", 0, "", "", false, "", "", "", false
 	}
 	m, valid := res.(createModel)
 	if !valid || !m.done || m.quit {
-		return "", "", "", 0, "", "", false, "", "", false
+		return "", "", "", 0, "", "", false, "", "", "", false
 	}
-	return m.dbName, m.provider, m.version, m.port, m.group, m.rootPassword, m.createUser, m.username, m.userPassword, true
+	return m.dbName, m.provider, m.version, m.port, m.group, m.rootPassword, m.createUser, m.username, m.userPassword, m.seedPath, true
 }
