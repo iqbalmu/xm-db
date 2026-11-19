@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -70,20 +71,22 @@ func TestDashboardModelFilterAndTabs(t *testing.T) {
 		t.Fatalf("expected only app_pg, got %+v", m.filtered)
 	}
 
-	// Tab switching
+	// Tab switching (requires right pane focus)
+	m.focusPane = 1
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
 	m = next.(dashboardModel)
 	if m.activeTab != 1 {
 		t.Fatalf("expected activeTab=1, got %d", m.activeTab)
 	}
 
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyTab})
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{']'}})
 	m = next.(dashboardModel)
 	if m.activeTab != 2 {
 		t.Fatalf("expected activeTab=2, got %d", m.activeTab)
 	}
 
-	// Confirm mode for remove & cancel
+	// Confirm mode for remove & cancel (requires left pane focus)
+	m.focusPane = 0
 	m.busy = ""
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'d'}})
 	m = next.(dashboardModel)
@@ -132,13 +135,13 @@ func TestDashboardGroupCollapseAndPaneFocus(t *testing.T) {
 		t.Fatalf("expected 3 rows after collapse, got %d", len(m.rows))
 	}
 
-	// Switch pane focus right/left
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'l'}})
+	// Switch pane focus right/left with single arrow
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	m = next.(dashboardModel)
 	if m.focusPane != 1 {
 		t.Fatalf("expected focusPane=1, got %d", m.focusPane)
 	}
-	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'h'}})
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	m = next.(dashboardModel)
 	if m.focusPane != 0 {
 		t.Fatalf("expected focusPane=0, got %d", m.focusPane)
@@ -284,5 +287,218 @@ func TestDashboardModalsAndResponsiveLayout(t *testing.T) {
 	}
 	if v := m.View(); v == "" {
 		t.Fatalf("expected non-empty View()")
+	}
+}
+
+func TestTablesViewAndFieldsToggles(t *testing.T) {
+	graph := &tableSchemaGraph{
+		tables: []tableOverview{
+			{
+				name: "users",
+				columns: []tableColumnInfo{
+					{name: "id", dataType: "bigint", key: "PK"},
+					{name: "email", dataType: "varchar(255)"},
+				},
+			},
+			{
+				name: "orders",
+				columns: []tableColumnInfo{
+					{name: "id", dataType: "bigint", key: "PK"},
+					{name: "user_id", dataType: "bigint", key: "FK"},
+				},
+			},
+		},
+		relations: []tableRelation{
+			{fromTable: "orders", fromCol: "user_id", toTable: "users", toCol: "id"},
+		},
+	}
+	graph.byName = map[string]*tableOverview{
+		"users":  &graph.tables[0],
+		"orders": &graph.tables[1],
+	}
+
+	tables := []string{"users", "orders"}
+
+	// Overview list with fields ON vs OFF
+	listWithFields, _ := formatTableOverviewList(tables, graph, 0, true, true, 80)
+	if !strings.Contains(listWithFields, "email") || !strings.Contains(listWithFields, "user_id") {
+		t.Fatalf("expected fields in list view, got:\n%s", listWithFields)
+	}
+	listNoFields, _ := formatTableOverviewList(tables, graph, 0, true, false, 80)
+	if strings.Contains(listNoFields, "email") || strings.Contains(listNoFields, "user_id") {
+		t.Fatalf("expected fields hidden in list view, got:\n%s", listNoFields)
+	}
+	if !strings.Contains(listNoFields, "users") || !strings.Contains(listNoFields, "orders") {
+		t.Fatalf("expected table names in list view without fields, got:\n%s", listNoFields)
+	}
+
+	// Overview diagram with fields ON vs OFF
+	diagWithFields, _ := formatTableOverviewDiagram(tables, graph, 0, true, true, 90)
+	if !strings.Contains(diagWithFields, "email") || !strings.Contains(diagWithFields, "orders.user_id ──▶ users.id") {
+		t.Fatalf("expected fields and column-level FK in diagram view, got:\n%s", diagWithFields)
+	}
+	diagNoFields, _ := formatTableOverviewDiagram(tables, graph, 0, true, false, 90)
+	if strings.Contains(diagNoFields, "email") || strings.Contains(diagNoFields, "orders.user_id") {
+		t.Fatalf("expected fields hidden in diagram view, got:\n%s", diagNoFields)
+	}
+	if !strings.Contains(diagNoFields, "orders ──▶ users") {
+		t.Fatalf("expected table-level FK in diagram view without fields, got:\n%s", diagNoFields)
+	}
+
+	// Detail diagram with fields ON vs OFF
+	detail := &tableDetail{
+		tableName:   "orders",
+		schemaCols:  []string{"Field", "Type", "Null"},
+		schemaRows:  [][]string{{"id", "bigint", "NO"}, {"user_id", "bigint", "NO"}},
+		previewCols: []string{"id", "user_id"},
+		previewRows: [][]string{{"1", "42"}},
+	}
+	detDiagOn := formatTableDetailDiagram(detail, graph, true, 80)
+	if !strings.Contains(detDiagOn, "user_id") || !strings.Contains(detDiagOn, "orders.user_id ──▶ users.id") {
+		t.Fatalf("expected fields & FK in detail diagram, got:\n%s", detDiagOn)
+	}
+	detDiagOff := formatTableDetailDiagram(detail, graph, false, 80)
+	if strings.Contains(detDiagOff, "user_id") || !strings.Contains(detDiagOff, "fields hidden") {
+		t.Fatalf("expected fields hidden in detail diagram, got:\n%s", detDiagOff)
+	}
+
+	// Keybinding toggles in dashboardModel on Tables tab
+	m := newDashboardModel()
+	m.busy = ""
+	m.entries = []dbEntry{
+		{db: &state.Database{Name: "app_pg", Provider: "postgres", Port: 5432}, running: true},
+	}
+	m.applyFilter()
+	m.activeTab = 2
+	m.focusPane = 1
+	m.detailTables = tables
+	m.tableSchema = graph
+	m.tableDetail = detail
+	m.renderTableOverviewToVP()
+
+	if m.tableViewDiagram {
+		t.Fatalf("expected tableViewDiagram=false initially")
+	}
+	if !m.tableShowFields {
+		t.Fatalf("expected tableShowFields=true initially")
+	}
+
+	// Press 'v' -> diagram
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	m = next.(dashboardModel)
+	if !m.tableViewDiagram {
+		t.Fatalf("expected tableViewDiagram=true after 'v'")
+	}
+
+	// Press 'f' -> fields off
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = next.(dashboardModel)
+	if m.tableShowFields {
+		t.Fatalf("expected tableShowFields=false after 'f'")
+	}
+
+	// Also works when inspecting a single table
+	m.selectedTable = "orders"
+	m.renderTableDetailToVP()
+	if !strings.Contains(m.tableDetailVP.View(), "fields hidden") {
+		t.Fatalf("expected detail diagram to hide fields when tableShowFields=false")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = next.(dashboardModel)
+	if !m.tableShowFields {
+		t.Fatalf("expected tableShowFields=true after second 'f'")
+	}
+	if !strings.Contains(m.tableDetailVP.View(), "user_id") {
+		t.Fatalf("expected detail diagram to show fields after toggling 'f' back on")
+	}
+}
+
+func TestDynamicPaneKeybinds(t *testing.T) {
+	m := newDashboardModel()
+	m.busy = ""
+	m.entries = []dbEntry{
+		{db: &state.Database{Name: "app_pg", Provider: "postgres", Port: 5432}, running: true},
+	}
+	m.applyFilter()
+
+	// Left pane active (focusPane == 0):
+	if !strings.Contains(m.footerHelpText(), "[Sidebar]") {
+		t.Fatalf("expected [Sidebar] footer when focusPane=0, got: %s", m.footerHelpText())
+	}
+	if strings.Contains(m.footerHelpText(), "1-4") {
+		t.Fatalf("expected no tab shortcut in [Sidebar] footer, got: %s", m.footerHelpText())
+	}
+	// Right-pane-only keys ('2', 'v', 'f', 'p') must be ignored when focusPane == 0.
+	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'2'}})
+	m = next.(dashboardModel)
+	if m.activeTab != 0 {
+		t.Fatalf("expected '2' ignored when focusPane=0, got activeTab=%d", m.activeTab)
+	}
+	m.activeTab = 2
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	m = next.(dashboardModel)
+	if m.tableViewDiagram {
+		t.Fatalf("expected 'v' ignored when focusPane=0")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
+	m = next.(dashboardModel)
+	if !m.tableShowFields {
+		t.Fatalf("expected 'f' ignored when focusPane=0")
+	}
+	m.activeTab = 0
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = next.(dashboardModel)
+	if m.showPassword {
+		t.Fatalf("expected 'p' ignored when focusPane=0")
+	}
+
+	// Switch to right pane with Right arrow and back with Left arrow:
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	m = next.(dashboardModel)
+	if m.focusPane != 1 {
+		t.Fatalf("expected focusPane=1 after Right, got %d", m.focusPane)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	m = next.(dashboardModel)
+	if m.focusPane != 0 {
+		t.Fatalf("expected focusPane=0 after Left, got %d", m.focusPane)
+	}
+
+	// Switch to right pane (focusPane == 1):
+	m.focusPane = 1
+	if !strings.Contains(m.footerHelpText(), "[Info]") {
+		t.Fatalf("expected [Info] footer when focusPane=1 & activeTab=0, got: %s", m.footerHelpText())
+	}
+	// Left-pane-only keys ('d', 'R', 'b', 's', 'n') must be ignored when focusPane == 1.
+	for _, k := range []rune{'d', 'R', 'b', 's', 'n'} {
+		next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{k}})
+		m = next.(dashboardModel)
+		if m.confirmMode != "" || m.modal != modalNone || m.busy != "" {
+			t.Fatalf("expected left-pane key %q ignored when focusPane=1", string(k))
+		}
+	}
+	// 'p' works on Info tab when focusPane == 1.
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'p'}})
+	m = next.(dashboardModel)
+	if !m.showPassword {
+		t.Fatalf("expected 'p' to toggle password when focusPane=1 & activeTab=0")
+	}
+
+	// Footer updates per tab on right pane.
+	m.activeTab = 1
+	if !strings.Contains(m.footerHelpText(), "[Logs]") {
+		t.Fatalf("expected [Logs] footer, got: %s", m.footerHelpText())
+	}
+	m.activeTab = 2
+	if !strings.Contains(m.footerHelpText(), "[Tables]") {
+		t.Fatalf("expected [Tables] footer, got: %s", m.footerHelpText())
+	}
+	m.selectedTable = "users"
+	if !strings.Contains(m.footerHelpText(), "[Table Detail]") {
+		t.Fatalf("expected [Table Detail] footer, got: %s", m.footerHelpText())
+	}
+	m.activeTab = 3
+	if !strings.Contains(m.footerHelpText(), "[Query]") {
+		t.Fatalf("expected [Query] footer, got: %s", m.footerHelpText())
 	}
 }

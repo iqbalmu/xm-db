@@ -47,11 +47,12 @@ type msgDatabasesLoaded struct {
 }
 
 type msgDetailLoaded struct {
-	name   string
-	tab    int
-	logs   string
-	tables []string
-	err    error
+	name        string
+	tab         int
+	logs        string
+	tables      []string
+	tableSchema *tableSchemaGraph
+	err         error
 }
 
 type msgTableDetailLoaded struct {
@@ -122,11 +123,15 @@ type dashboardModel struct {
 	logMatchCurrent int
 
 	// Tables tab
-	detailTables  []string
-	tableCursor   int
-	selectedTable string
-	tableDetail   *tableDetail
-	tableDetailVP viewport.Model
+	detailTables     []string
+	tableSchema      *tableSchemaGraph
+	tableCursor      int
+	selectedTable    string
+	tableDetail      *tableDetail
+	tableOverviewVP  viewport.Model
+	tableDetailVP    viewport.Model
+	tableViewDiagram bool
+	tableShowFields  bool
 
 	// Query tab
 	queryInput  textinput.Model
@@ -181,7 +186,9 @@ func newDashboardModel() dashboardModel {
 		logSearchInput:  lsi,
 		queryInput:      qi,
 		logsVP:          viewport.New(50, 18),
+		tableOverviewVP: viewport.New(50, 18),
 		tableDetailVP:   viewport.New(50, 18),
+		tableShowFields: true,
 		queryVP:         viewport.New(50, 14),
 		logFollow:       true,
 		spinner:         sp,
@@ -283,7 +290,11 @@ func loadDetailCmd(entry *dbEntry, tab int) tea.Cmd {
 			}
 			defer conn.Close()
 			tables, err := prov.ListTables(context.Background(), conn, db.DatabaseName)
-			return msgDetailLoaded{name: db.Name, tab: tab, tables: tables, err: err}
+			if err != nil {
+				return msgDetailLoaded{name: db.Name, tab: tab, tables: tables, err: err}
+			}
+			schemaGraph := fetchTableSchemaGraph(context.Background(), conn, db.Provider, db.DatabaseName, tables)
+			return msgDetailLoaded{name: db.Name, tab: tab, tables: tables, tableSchema: schemaGraph, err: nil}
 		}
 		return nil
 	}
@@ -581,6 +592,8 @@ func (m *dashboardModel) syncViewportSizes() {
 
 	m.logsVP.Width = innerW
 	m.logsVP.Height = max(4, innerH-1)
+	m.tableOverviewVP.Width = innerW
+	m.tableOverviewVP.Height = max(4, innerH-2)
 	m.tableDetailVP.Width = innerW
 	m.tableDetailVP.Height = max(4, innerH-2)
 	m.queryInput.Width = max(20, innerW-6)
@@ -697,6 +710,7 @@ func (m *dashboardModel) selectGroupByName(group string) bool {
 func (m *dashboardModel) resetRightSubstate() {
 	m.selectedTable = ""
 	m.tableDetail = nil
+	m.tableSchema = nil
 	m.tableCursor = 0
 	m.detailErr = nil
 	m.queryResult = nil
@@ -712,6 +726,13 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ensureLeftVisible()
 		if m.activeTab == 1 {
 			m.refreshLogsViewport()
+		}
+		if m.activeTab == 2 {
+			if m.selectedTable != "" {
+				m.renderTableDetailToVP()
+			} else {
+				m.renderTableOverviewToVP()
+			}
 		}
 		return m, nil
 
@@ -743,12 +764,16 @@ func (m dashboardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if sel := m.selected(); sel != nil && sel.db.Name == msg.name && m.activeTab == msg.tab {
 			m.detailLogs = msg.logs
 			m.detailTables = msg.tables
+			m.tableSchema = msg.tableSchema
 			m.detailErr = msg.err
 			if msg.tab == 1 {
 				m.refreshLogsViewport()
 			}
-			if msg.tab == 2 && m.tableCursor >= len(m.detailTables) {
-				m.tableCursor = max(0, len(m.detailTables)-1)
+			if msg.tab == 2 {
+				if m.tableCursor >= len(m.detailTables) {
+					m.tableCursor = max(0, len(m.detailTables)-1)
+				}
+				m.renderTableOverviewToVP()
 			}
 		}
 		return m, nil
@@ -898,29 +923,44 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 
 	case "left", "h":
 		m.focusPane = 0
+		if m.activeTab == 2 && m.selectedTable == "" {
+			m.renderTableOverviewToVP()
+		}
 		return m, nil
 
 	case "right", "l":
 		m.focusPane = 1
+		if m.activeTab == 2 && m.selectedTable == "" {
+			m.renderTableOverviewToVP()
+		}
 		return m, nil
 
 	case "tab", "]":
-		m.activeTab = (m.activeTab + 1) % tabCount
-		return m, loadDetailCmd(m.selected(), m.activeTab)
+		if m.focusPane == 1 {
+			m.activeTab = (m.activeTab + 1) % tabCount
+			return m, loadDetailCmd(m.selected(), m.activeTab)
+		}
 
 	case "[":
-		m.activeTab = (m.activeTab + tabCount - 1) % tabCount
-		return m, loadDetailCmd(m.selected(), m.activeTab)
+		if m.focusPane == 1 {
+			m.activeTab = (m.activeTab + tabCount - 1) % tabCount
+			return m, loadDetailCmd(m.selected(), m.activeTab)
+		}
 
 	case "1", "2", "3", "4":
-		m.activeTab = int(msg.String()[0] - '1')
-		return m, loadDetailCmd(m.selected(), m.activeTab)
+		if m.focusPane == 1 {
+			m.activeTab = int(msg.String()[0] - '1')
+			return m, loadDetailCmd(m.selected(), m.activeTab)
+		}
 
 	case "/":
-		if m.focusPane == 1 && m.activeTab == 1 {
-			m.logSearching = true
-			m.logSearchInput.Focus()
-			return m, textinput.Blink
+		if m.focusPane == 1 {
+			if m.activeTab == 1 {
+				m.logSearching = true
+				m.logSearchInput.Focus()
+				return m, textinput.Blink
+			}
+			return m, nil
 		}
 		m.filtering = true
 		m.filterInput.Focus()
@@ -930,6 +970,7 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable != "" {
 			m.selectedTable = ""
 			m.tableDetail = nil
+			m.renderTableOverviewToVP()
 			return m, nil
 		}
 		if m.focusPane == 1 && m.activeTab == 1 && m.logSearchQuery != "" {
@@ -940,6 +981,9 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 		if m.focusPane == 1 {
 			m.focusPane = 0
+			if m.activeTab == 2 && m.selectedTable == "" {
+				m.renderTableOverviewToVP()
+			}
 			return m, nil
 		}
 		if strings.TrimSpace(m.filterInput.Value()) != "" {
@@ -987,6 +1031,9 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			if m.selected() != nil && msg.String() == "enter" {
 				m.focusPane = 1
+				if m.activeTab == 2 && m.selectedTable == "" {
+					m.renderTableOverviewToVP()
+				}
 				return m, nil
 			}
 		} else if m.activeTab == 2 {
@@ -1010,8 +1057,23 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, textinput.Blink
 		}
 
+	case "v":
+		if m.focusPane == 1 && m.activeTab == 2 {
+			m.tableViewDiagram = !m.tableViewDiagram
+			if m.selectedTable != "" {
+				m.renderTableDetailToVP()
+			} else {
+				m.renderTableOverviewToVP()
+			}
+			modeLabel := "list/table"
+			if m.tableViewDiagram {
+				modeLabel = "diagram"
+			}
+			return m, m.setToast("Tables view: "+modeLabel, false)
+		}
+
 	case "f":
-		if m.activeTab == 1 {
+		if m.focusPane == 1 && m.activeTab == 1 {
 			m.logFollow = !m.logFollow
 			if m.logFollow {
 				m.logsVP.GotoBottom()
@@ -1022,18 +1084,33 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			return m, m.setToast("Log auto-follow: "+stateLabel, false)
 		}
+		if m.focusPane == 1 && m.activeTab == 2 {
+			m.tableShowFields = !m.tableShowFields
+			if m.selectedTable != "" {
+				m.renderTableDetailToVP()
+			} else {
+				m.renderTableOverviewToVP()
+			}
+			stateLabel := "hidden"
+			if m.tableShowFields {
+				stateLabel = "shown"
+			}
+			return m, m.setToast("Table fields: "+stateLabel, false)
+		}
 
 	case "N":
-		if m.activeTab == 1 && len(m.logMatchLines) > 0 {
+		if m.focusPane == 1 && m.activeTab == 1 && len(m.logMatchLines) > 0 {
 			m.logMatchCurrent = (m.logMatchCurrent + len(m.logMatchLines) - 1) % len(m.logMatchLines)
 			m.logsVP.SetYOffset(max(0, m.logMatchLines[m.logMatchCurrent]-2))
 			return m, nil
 		}
 
 	case "n":
-		if m.focusPane == 1 && m.activeTab == 1 && m.logSearchQuery != "" && len(m.logMatchLines) > 0 {
-			m.logMatchCurrent = (m.logMatchCurrent + 1) % len(m.logMatchLines)
-			m.logsVP.SetYOffset(max(0, m.logMatchLines[m.logMatchCurrent]-2))
+		if m.focusPane == 1 {
+			if m.activeTab == 1 && m.logSearchQuery != "" && len(m.logMatchLines) > 0 {
+				m.logMatchCurrent = (m.logMatchCurrent + 1) % len(m.logMatchLines)
+				m.logsVP.SetYOffset(max(0, m.logMatchLines[m.logMatchCurrent]-2))
+			}
 			return m, nil
 		}
 		stateMgr, err := state.NewManager()
@@ -1046,14 +1123,16 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return m, textinput.Blink
 
 	case "p":
-		m.showPassword = !m.showPassword
+		if m.focusPane == 1 && m.activeTab == 0 {
+			m.showPassword = !m.showPassword
+		}
 
 	case "r":
 		m.busy = "Refreshing..."
 		return m, tea.Batch(m.spinner.Tick, loadDatabasesCmd())
 
 	case "s":
-		if m.busy != "" {
+		if m.focusPane != 0 || m.busy != "" {
 			return m, nil
 		}
 		if row := m.selectedRow(); row != nil && row.isGroup {
@@ -1073,6 +1152,9 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "c":
+		if m.focusPane != 1 || m.activeTab != 0 {
+			return m, nil
+		}
 		if sel := m.selected(); sel != nil && sel.connStr != "" {
 			if err := clipboard.WriteAll(sel.connStr); err != nil {
 				return m, m.setToast(fmt.Sprintf("Clipboard error: %v", err), true)
@@ -1081,6 +1163,9 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "x":
+		if m.focusPane != 0 {
+			return m, nil
+		}
 		if sel := m.selected(); sel != nil {
 			if !sel.running {
 				return m, m.setToast(fmt.Sprintf("'%s' is stopped — press 's' to start it first", sel.db.Name), true)
@@ -1091,6 +1176,9 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "b":
+		if m.focusPane != 0 {
+			return m, nil
+		}
 		if sel := m.selected(); sel != nil && m.busy == "" {
 			if !sel.running {
 				return m, m.setToast(fmt.Sprintf("'%s' is stopped — start it before backing up", sel.db.Name), true)
@@ -1101,6 +1189,9 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "L":
+		if m.focusPane != 0 {
+			return m, nil
+		}
 		if sel := m.selected(); sel != nil && m.busy == "" {
 			if !sel.running {
 				return m, m.setToast(fmt.Sprintf("'%s' is stopped — start it before restoring", sel.db.Name), true)
@@ -1115,12 +1206,12 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 
 	case "d":
-		if m.selected() != nil && m.busy == "" {
+		if m.focusPane == 0 && m.selected() != nil && m.busy == "" {
 			m.confirmMode = "remove"
 		}
 
 	case "R":
-		if m.selected() != nil && m.busy == "" {
+		if m.focusPane == 0 && m.selected() != nil && m.busy == "" {
 			m.confirmMode = "reset"
 		}
 	}
@@ -1146,6 +1237,7 @@ func (m dashboardModel) scrollRight(delta int) (tea.Model, tea.Cmd) {
 			}
 		} else if len(m.detailTables) > 0 {
 			m.tableCursor = max(0, min(len(m.detailTables)-1, m.tableCursor+delta))
+			m.renderTableOverviewToVP()
 		}
 	case 3:
 		if delta < 0 {
@@ -1237,14 +1329,49 @@ func (m dashboardModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *dashboardModel) renderTableOverviewToVP() {
+	if len(m.detailTables) == 0 {
+		m.tableOverviewVP.SetContent(styleMutedText.Render("(no tables found)"))
+		return
+	}
+	w := max(24, m.tableOverviewVP.Width)
+	focused := m.focusPane == 1
+	var content string
+	var cursorLine int
+	if m.tableViewDiagram {
+		content, cursorLine = formatTableOverviewDiagram(m.detailTables, m.tableSchema, m.tableCursor, focused, m.tableShowFields, w)
+	} else {
+		content, cursorLine = formatTableOverviewList(m.detailTables, m.tableSchema, m.tableCursor, focused, m.tableShowFields, w)
+	}
+	m.tableOverviewVP.SetContent(content)
+	// Keep selected table/card visible within viewport.
+	if m.tableOverviewVP.Height > 0 {
+		if cursorLine < m.tableOverviewVP.YOffset {
+			m.tableOverviewVP.SetYOffset(cursorLine)
+		} else if cursorLine >= m.tableOverviewVP.YOffset+m.tableOverviewVP.Height {
+			m.tableOverviewVP.SetYOffset(max(0, cursorLine-m.tableOverviewVP.Height+3))
+		}
+	}
+}
+
 func (m *dashboardModel) renderTableDetailToVP() {
 	if m.tableDetail == nil {
 		return
 	}
 	w := max(24, m.tableDetailVP.Width)
 	var b strings.Builder
-	b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("Schema: "+m.tableDetail.tableName) + "\n")
-	b.WriteString(formatCompactTable(m.tableDetail.schemaCols, m.tableDetail.schemaRows, w))
+
+	if m.tableViewDiagram {
+		b.WriteString(formatTableDetailDiagram(m.tableDetail, m.tableSchema, m.tableShowFields, w))
+	} else {
+		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("Schema: "+m.tableDetail.tableName) + "\n")
+		if m.tableShowFields {
+			b.WriteString(formatCompactTable(m.tableDetail.schemaCols, m.tableDetail.schemaRows, w))
+		} else {
+			b.WriteString(styleMutedText.Render(fmt.Sprintf("(%d fields hidden — press 'f' to show)", len(m.tableDetail.schemaRows))) + "\n")
+		}
+	}
+
 	b.WriteString("\n" + lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("Preview (up to 25 rows)") + "\n")
 	if len(m.tableDetail.previewCols) == 0 {
 		b.WriteString(styleMutedText.Render("(unable to preview rows or empty)") + "\n")
@@ -1494,9 +1621,20 @@ func (m dashboardModel) renderTablesTab() string {
 	if m.detailErr != nil {
 		return styleMutedText.Render(m.detailErr.Error())
 	}
+
+	viewBadge := styleMutedText.Render("view:list")
+	if m.tableViewDiagram {
+		viewBadge = styleBadgeRun.Render("view:diagram")
+	}
+	fieldsBadge := styleMutedText.Render("fields:off")
+	if m.tableShowFields {
+		fieldsBadge = styleBadgeRun.Render("fields:on")
+	}
+
 	if m.selectedTable != "" {
 		var b strings.Builder
-		b.WriteString(styleMutedText.Render("Esc: back to tables  •  ↑/↓: scroll") + "\n")
+		status := fmt.Sprintf("%s  %s  •  Esc: back  •  v: view  •  f: fields  •  ↑/↓: scroll", viewBadge, fieldsBadge)
+		b.WriteString(styleMutedText.Render(status) + "\n")
 		if m.tableDetail == nil {
 			b.WriteString(styleMutedText.Render("Loading table details..."))
 		} else {
@@ -1508,14 +1646,9 @@ func (m dashboardModel) renderTablesTab() string {
 		return styleMutedText.Render("(no tables found)")
 	}
 	var b strings.Builder
-	b.WriteString(styleMutedText.Render("Focus right pane (→/l) + Enter to inspect schema & rows") + "\n\n")
-	for i, t := range m.detailTables {
-		line := fmt.Sprintf("  %d. %s", i+1, t)
-		if m.focusPane == 1 && i == m.tableCursor {
-			line = styleSelectedRow.Render(fmt.Sprintf("▸ %d. %s", i+1, t))
-		}
-		b.WriteString(line + "\n")
-	}
+	status := fmt.Sprintf("%s  %s  •  Enter: inspect  •  v: view  •  f: fields", viewBadge, fieldsBadge)
+	b.WriteString(styleMutedText.Render(status) + "\n")
+	b.WriteString(m.tableOverviewVP.View())
 	return b.String()
 }
 
@@ -1555,7 +1688,7 @@ func (m dashboardModel) renderFooter() string {
 		}
 	}
 
-	helpText := "  ↑/↓: nav  •  ←/→: pane  •  1-4: tabs  •  s: start/stop  •  x: shell  •  b/L: backup/restore  •  n: new  •  /: filter  •  ?: help  •  q: quit"
+	helpText := m.footerHelpText()
 	if m.width > 0 && lipgloss.Width(helpText) > m.width {
 		helpText = ansi.Truncate(helpText, max(20, m.width-1), "…")
 	}
@@ -1564,6 +1697,28 @@ func (m dashboardModel) renderFooter() string {
 		return statusLine + "\n" + help
 	}
 	return help
+}
+
+func (m dashboardModel) footerHelpText() string {
+	if m.focusPane == 0 {
+		return "  [Sidebar] ↑/↓: nav  •  →/Enter: pane  •  /: filter  •  s: start/stop  •  n: new  •  x: shell  •  b/L: backup/restore  •  R/d: reset/del  •  ?: help  •  q: quit"
+	}
+
+	switch m.activeTab {
+	case 0:
+		return "  [Info] c: copy conn  •  p: password  •  ←/Esc: sidebar  •  1-4/Tab: tab  •  r: refresh  •  ?: help  •  q: quit"
+	case 1:
+		return "  [Logs] ↑/↓: scroll  •  f: follow  •  /: search  •  n/N: match  •  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+	case 2:
+		if m.selectedTable != "" {
+			return "  [Table Detail] ↑/↓: scroll  •  v: view  •  f: fields  •  Esc: back  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+		}
+		return "  [Tables] ↑/↓: select  •  Enter: inspect  •  v: view  •  f: fields  •  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+	case 3:
+		return "  [Query] i/Enter: write SQL  •  ↑/↓: scroll  •  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+	default:
+		return "  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+	}
 }
 
 func runDashboardTUI() {

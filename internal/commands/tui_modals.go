@@ -89,7 +89,7 @@ func renderHelpModal(width int) string {
 			title: "Navigation & Layout",
 			items: [][2]string{
 				{"↑/k, ↓/j", "Move selection / scroll"},
-				{"←/h, →/l, Tab", "Switch focus between Left & Right panes"},
+				{"←/h, →/l", "Switch focus between Left & Right panes"},
 				{"Enter / Space", "Expand/collapse group (or inspect table)"},
 				{"1 - 4, [ / ]", "Switch Right pane tab (Info/Logs/Tables/Query)"},
 				{"/", "Filter databases (Left) or search logs (Logs)"},
@@ -109,7 +109,8 @@ func renderHelpModal(width int) string {
 		{
 			title: "Logs, Tables & Query",
 			items: [][2]string{
-				{"f", "Toggle live log auto-follow (Logs tab)"},
+				{"f", "Toggle log auto-follow (Logs) / table fields (Tables)"},
+				{"v", "Toggle table view: list/table vs diagram (Tables tab)"},
 				{"n / N", "Next / previous log search match"},
 				{"Esc", "Back to table list / exit search / clear filter"},
 				{"i / Enter", "Focus SQL input (Query tab)"},
