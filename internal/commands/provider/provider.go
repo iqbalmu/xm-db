@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/xm-db/internal/providers"
+	"github.com/iqbalmu/xmdb/internal/providers"
 	"github.com/olekukonko/tablewriter"
 	"github.com/spf13/cobra"
 )

@@ -1,7 +1,7 @@
 #!/bin/sh
-# xm-db installer: installs the latest release binary from GitHub.
+# xmdb installer: installs the latest release binary from GitHub.
 #
-#   curl -fsSL https://raw.githubusercontent.com/iqbalmu/xm-db/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/iqbalmu/xmdb/main/install.sh | sh
 #
 # Environment overrides:
 #   XMDB_INSTALL_DIR  target directory (default: /usr/local/bin, falls back to
@@ -10,7 +10,7 @@
 
 set -eu
 
-REPO="iqbalmu/xm-db"
+REPO="iqbalmu/xmdb"
 
 msg() { printf '%s\n' "$*"; }
 fail() { printf 'error: %s\n' "$*" >&2; exit 1; }
@@ -42,13 +42,13 @@ if [ -z "$TAG" ]; then
 fi
 
 VER=${TAG#v}
-ASSET="xm-db_${VER}_${OS}_${ARCH}.tar.gz"
+ASSET="xmdb_${VER}_${OS}_${ARCH}.tar.gz"
 BASE="https://github.com/$REPO/releases/download/$TAG"
 
 TMP=$(mktemp -d)
 trap 'rm -rf "$TMP"' EXIT
 
-msg "==> Downloading xm-db $TAG for $OS/$ARCH…"
+msg "==> Downloading xmdb $TAG for $OS/$ARCH…"
 curl -fsSL -o "$TMP/$ASSET" "$BASE/$ASSET" ||
 	fail "download failed: $BASE/$ASSET"
 curl -fsSL -o "$TMP/checksums.txt" "$BASE/checksums.txt" ||

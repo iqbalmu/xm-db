@@ -2,7 +2,7 @@
 
 # Binary name
 BINARY_NAME=xmdb
-DOCKER_IMAGE=xm-db:latest
+DOCKER_IMAGE=xmdb:latest
 
 # Build the binary
 build:

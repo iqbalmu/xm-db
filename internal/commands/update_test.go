@@ -24,7 +24,7 @@ func TestIsUpToDate(t *testing.T) {
 
 func TestAssetNames(t *testing.T) {
 	archive, binary := assetNames("v1.2.3")
-	wantArchive := "xm-db_1.2.3_" + runtime.GOOS + "_" + runtime.GOARCH
+	wantArchive := "xmdb_1.2.3_" + runtime.GOOS + "_" + runtime.GOARCH
 	if runtime.GOOS == "windows" {
 		wantArchive += ".zip"
 	} else {
@@ -43,10 +43,10 @@ func TestAssetNames(t *testing.T) {
 }
 
 func TestFindChecksum(t *testing.T) {
-	body := `1111111111111111111111111111111111111111111111111111111111111111  xm-db_1.0.0_linux_amd64.tar.gz
-2222222222222222222222222222222222222222222222222222222222222222  xm-db_1.0.0_darwin_arm64.tar.gz
+	body := `1111111111111111111111111111111111111111111111111111111111111111  xmdb_1.0.0_linux_amd64.tar.gz
+2222222222222222222222222222222222222222222222222222222222222222  xmdb_1.0.0_darwin_arm64.tar.gz
 `
-	got, err := findChecksum(body, "xm-db_1.0.0_darwin_arm64.tar.gz")
+	got, err := findChecksum(body, "xmdb_1.0.0_darwin_arm64.tar.gz")
 	if err != nil {
 		t.Fatalf("findChecksum: %v", err)
 	}

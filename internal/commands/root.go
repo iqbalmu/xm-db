@@ -4,8 +4,8 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/xm-db/internal/commands/provider"
-	"github.com/iqbalmu/xm-db/internal/commands/table"
+	"github.com/iqbalmu/xmdb/internal/commands/provider"
+	"github.com/iqbalmu/xmdb/internal/commands/table"
 	"github.com/spf13/cobra"
 )
 
@@ -19,7 +19,7 @@ var rootCmd = &cobra.Command{
 	Short:         "Database Management CLI for Development",
 	SilenceUsage:  true,
 	SilenceErrors: true,
-	Long: `xm-db is a powerful CLI tool for managing development databases.
+	Long: `xmdb is a powerful CLI tool for managing development databases.
 It supports MySQL and PostgreSQL with easy container management.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		runWizard()
@@ -59,7 +59,7 @@ func showOverview() {
 	commandColor := color.New(color.FgGreen)
 
 	titleColor.Println("\n╔═══════════════════════════════════════════════════════╗")
-	titleColor.Println("║          xm-db - Database Management CLI              ║")
+	titleColor.Println("║          xmdb - Database Management CLI               ║")
 	titleColor.Println("╚═══════════════════════════════════════════════════════╝")
 
 	subtitleColor.Println("\nManage your development databases with ease!")

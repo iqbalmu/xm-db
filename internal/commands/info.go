@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/xm-db/internal/container"
-	"github.com/iqbalmu/xm-db/internal/providers"
-	"github.com/iqbalmu/xm-db/internal/state"
+	"github.com/iqbalmu/xmdb/internal/container"
+	"github.com/iqbalmu/xmdb/internal/providers"
+	"github.com/iqbalmu/xmdb/internal/state"
 	"github.com/spf13/cobra"
 )
 

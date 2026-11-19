@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/xm-db/internal/config"
+	"github.com/iqbalmu/xmdb/internal/config"
 	"github.com/spf13/cobra"
 )
 

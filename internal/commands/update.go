@@ -21,7 +21,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const updateRepo = "iqbalmu/xm-db"
+const updateRepo = "iqbalmu/xmdb"
 
 var updateCmd = &cobra.Command{
 	Use:   "update",
@@ -91,7 +91,7 @@ func assetNames(tag string) (string, string) {
 	if runtime.GOOS == "windows" {
 		ext = "zip"
 	}
-	archive := fmt.Sprintf("xm-db_%s_%s_%s.%s", ver, runtime.GOOS, runtime.GOARCH, ext)
+	archive := fmt.Sprintf("xmdb_%s_%s_%s.%s", ver, runtime.GOOS, runtime.GOARCH, ext)
 	binary := "xmdb"
 	if runtime.GOOS == "windows" {
 		binary += ".exe"

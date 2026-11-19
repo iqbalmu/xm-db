@@ -15,9 +15,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/iqbalmu/xm-db/internal/container"
-	"github.com/iqbalmu/xm-db/internal/providers"
-	"github.com/iqbalmu/xm-db/internal/state"
+	"github.com/iqbalmu/xmdb/internal/container"
+	"github.com/iqbalmu/xmdb/internal/providers"
+	"github.com/iqbalmu/xmdb/internal/state"
 )
 
 const (
@@ -1499,7 +1499,7 @@ func (m dashboardModel) View() string {
 		dockerBadge = styleErrorText.Render("✗ runtime unavailable")
 	}
 	header := fmt.Sprintf("%s   %s   %s",
-		styleHeader.Render(" xm-db "),
+		styleHeader.Render(" xmdb "),
 		dockerBadge,
 		styleMutedText.Render(fmt.Sprintf("%d database(s)", len(m.entries))),
 	)

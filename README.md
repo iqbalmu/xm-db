@@ -1,4 +1,4 @@
-# xm-db: Database Management CLI
+# xmdb: Database Management CLI
 
 A CLI for managing throwaway development databases as Docker containers.
 Supports MySQL and PostgreSQL with a single consistent interface.
@@ -13,7 +13,7 @@ xmdb remove mydb                       # everything gone, volumes included
 
 Spinning up a database for local development means remembering image names,
 port mappings, environment variables, volume flags, and the right `docker run`
-incantation for each engine. xm-db does it in one command and keeps track of what
+incantation for each engine. xmdb does it in one command and keeps track of what
 it created: containers, named volumes, ports, and credentials live in
 `~/.xmdb/databases/<name>.json`, so `xmdb` commands work by name instead of
 container ID.
@@ -56,7 +56,7 @@ etc.).
 ### One-liner (curl)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/iqbalmu/xm-db/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/iqbalmu/xmdb/main/install.sh | sh
 ```
 
 Detects your OS/arch, downloads the matching release binary, verifies its
@@ -72,18 +72,18 @@ Re-running the installer (or running `xmdb update`) upgrades to the latest relea
 ### Prebuilt binaries
 
 Grab a binary for your platform from
-[GitHub Releases](https://github.com/iqbalmu/xm-db/releases), unpack it, and put
+[GitHub Releases](https://github.com/iqbalmu/xmdb/releases), unpack it, and put
 `xmdb` somewhere in your `PATH`:
 
 ```sh
-tar -xzf xm-db_*_linux_amd64.tar.gz
+tar -xzf xmdb_*_linux_amd64.tar.gz
 sudo install ./xmdb /usr/local/bin/
 ```
 
 ### go install
 
 ```sh
-go install github.com/iqbalmu/xm-db/cmd/xmdb@latest
+go install github.com/iqbalmu/xmdb/cmd/xmdb@latest
 ```
 
 The binary lands in `$(go env GOPATH)/bin` (usually `~/go/bin`), so make sure
@@ -94,7 +94,7 @@ that directory is on your `PATH`.
 Requires Go 1.25+:
 
 ```sh
-git clone https://github.com/iqbalmu/xm-db
+git clone https://github.com/iqbalmu/xmdb
 cd xmdb
 make install          # builds and copies to /usr/local/bin
 ```

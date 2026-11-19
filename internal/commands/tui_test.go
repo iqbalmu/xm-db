@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/iqbalmu/xm-db/internal/state"
+	"github.com/iqbalmu/xmdb/internal/state"
 )
 
 func TestCreateModelStepNavigation(t *testing.T) {

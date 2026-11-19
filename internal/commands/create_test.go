@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/iqbalmu/xm-db/internal/state"
+	"github.com/iqbalmu/xmdb/internal/state"
 )
 
 // newTestStateManager returns a manager rooted at a temp HOME so tests never

@@ -8,9 +8,9 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/iqbalmu/xm-db/internal/providers"
-	"github.com/iqbalmu/xm-db/internal/state"
-	"github.com/iqbalmu/xm-db/pkg/utils"
+	"github.com/iqbalmu/xmdb/internal/providers"
+	"github.com/iqbalmu/xmdb/internal/state"
+	"github.com/iqbalmu/xmdb/pkg/utils"
 )
 
 type tableDetail struct {

@@ -120,7 +120,7 @@ func renderHelpModal(width int) string {
 	}
 
 	var b strings.Builder
-	b.WriteString(styleModalTitle.Render("xm-db Keyboard Shortcuts") + "\n\n")
+	b.WriteString(styleModalTitle.Render("xmdb Keyboard Shortcuts") + "\n\n")
 	for _, sec := range sections {
 		b.WriteString(lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render(sec.title) + "\n")
 		for _, it := range sec.items {

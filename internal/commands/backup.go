@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/fatih/color"
-	"github.com/iqbalmu/xm-db/internal/container"
-	"github.com/iqbalmu/xm-db/internal/state"
-	"github.com/iqbalmu/xm-db/pkg/utils"
+	"github.com/iqbalmu/xmdb/internal/container"
+	"github.com/iqbalmu/xmdb/internal/state"
+	"github.com/iqbalmu/xmdb/pkg/utils"
 	"github.com/spf13/cobra"
 )
 

@@ -9,10 +9,10 @@ RUN go mod download
 COPY . .
 
 # Inject the version; plain `docker build` without the arg shows "dev".
-#   docker build --build-arg VERSION=v1.2.3 -t xm-db .
+#   docker build --build-arg VERSION=v1.2.3 -t xmdb .
 ARG VERSION=dev
 RUN CGO_ENABLED=0 go build \
-	-ldflags "-s -w -X github.com/iqbalmu/xm-db/internal/commands.Version=${VERSION}" \
+	-ldflags "-s -w -X github.com/iqbalmu/xmdb/internal/commands.Version=${VERSION}" \
 	-o /bin/xmdb ./cmd/xmdb
 
 # Stage 2: Runtime
