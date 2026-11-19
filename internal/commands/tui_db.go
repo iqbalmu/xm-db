@@ -26,14 +26,16 @@ type tableColumnInfo struct {
 	dataType string
 	nullable bool
 	key      string // "PK", "FK", "PK,FK", "UNI", or ""
+	unique   bool
 	defVal   string
 }
 
 type tableRelation struct {
-	fromTable string
-	fromCol   string
-	toTable   string
-	toCol     string
+	fromTable  string
+	fromCol    string
+	toTable    string
+	toCol      string
+	isOneToOne bool
 }
 
 type tableOverview struct {
@@ -303,11 +305,14 @@ func fetchTableSchemaGraph(ctx context.Context, conn *sql.DB, provider, dbName s
 					continue
 				}
 				key := ""
+				isUniq := false
 				switch colKey {
 				case "PRI":
 					key = "PK"
+					isUniq = true
 				case "UNI":
 					key = "UNI"
+					isUniq = true
 				case "MUL":
 					key = "IDX"
 				}
@@ -316,6 +321,7 @@ func fetchTableSchemaGraph(ctx context.Context, conn *sql.DB, provider, dbName s
 					dataType: dtype,
 					nullable: strings.EqualFold(nullable, "YES"),
 					key:      key,
+					unique:   isUniq,
 					defVal:   defVal,
 				})
 			}
@@ -342,6 +348,7 @@ func fetchTableSchemaGraph(ctx context.Context, conn *sql.DB, provider, dbName s
 				markColumnFK(graph.byName[fromTbl], fromCol)
 			}
 		}
+		finalizeRelationCardinality(graph)
 		return graph
 	}
 
@@ -392,7 +399,7 @@ func fetchTableSchemaGraph(ctx context.Context, conn *sql.DB, provider, dbName s
 		LEFT JOIN information_schema.constraint_column_usage ccu
 			ON tc.constraint_type = 'FOREIGN KEY' AND tc.constraint_name = ccu.constraint_name AND tc.table_schema = ccu.table_schema
 		WHERE tc.table_schema NOT IN ('pg_catalog', 'information_schema')
-			AND tc.constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY')
+			AND tc.constraint_type IN ('PRIMARY KEY', 'FOREIGN KEY', 'UNIQUE')
 		ORDER BY from_tbl, kcu.ordinal_position`)
 	if err == nil {
 		defer constRows.Close()
@@ -403,6 +410,8 @@ func fetchTableSchemaGraph(ctx context.Context, conn *sql.DB, provider, dbName s
 			}
 			if ctype == "PRIMARY KEY" {
 				markColumnPK(graph.byName[fromTbl], fromCol)
+			} else if ctype == "UNIQUE" {
+				markColumnUnique(graph.byName[fromTbl], fromCol)
 			} else if ctype == "FOREIGN KEY" && toTbl != "" {
 				graph.relations = append(graph.relations, tableRelation{
 					fromTable: fromTbl,
@@ -415,6 +424,7 @@ func fetchTableSchemaGraph(ctx context.Context, conn *sql.DB, provider, dbName s
 		}
 	}
 
+	finalizeRelationCardinality(graph)
 	return graph
 }
 
@@ -424,10 +434,42 @@ func markColumnPK(t *tableOverview, colName string) {
 	}
 	for i := range t.columns {
 		if t.columns[i].name == colName {
+			t.columns[i].unique = true
 			if t.columns[i].key == "FK" {
 				t.columns[i].key = "PK,FK"
 			} else if t.columns[i].key != "PK,FK" {
 				t.columns[i].key = "PK"
+			}
+		}
+	}
+}
+
+func markColumnUnique(t *tableOverview, colName string) {
+	if t == nil {
+		return
+	}
+	for i := range t.columns {
+		if t.columns[i].name == colName {
+			t.columns[i].unique = true
+			if t.columns[i].key == "" {
+				t.columns[i].key = "UNI"
+			}
+		}
+	}
+}
+
+func finalizeRelationCardinality(graph *tableSchemaGraph) {
+	if graph == nil {
+		return
+	}
+	for i := range graph.relations {
+		rel := &graph.relations[i]
+		if t := graph.byName[rel.fromTable]; t != nil {
+			for _, c := range t.columns {
+				if c.name == rel.fromCol && (c.unique || c.key == "PK" || c.key == "PK,FK" || c.key == "UNI") {
+					rel.isOneToOne = true
+					break
+				}
 			}
 		}
 	}
@@ -503,143 +545,671 @@ func formatTableOverviewList(tables []string, graph *tableSchemaGraph, cursor in
 	return b.String(), cursorLine
 }
 
-func formatTableOverviewDiagram(tables []string, graph *tableSchemaGraph, cursor int, focused bool, showFields bool, maxWidth int) (string, int) {
-	if maxWidth < 24 {
-		maxWidth = 24
+type erdStyle uint8
+
+const (
+	erdStyleNormal erdStyle = iota
+	erdStyleMuted
+	erdStyleAccent
+	erdStylePrimary
+	erdStyleHighlight
+)
+
+type erdRect struct {
+	x, y, w, h int
+}
+
+type erdCanvas struct {
+	w, h   int
+	runes  [][]rune
+	styles [][]erdStyle
+}
+
+func newERDCanvas(w, h int) *erdCanvas {
+	if w < 1 {
+		w = 1
+	}
+	if h < 1 {
+		h = 1
+	}
+	runes := make([][]rune, h)
+	styles := make([][]erdStyle, h)
+	for y := 0; y < h; y++ {
+		row := make([]rune, w)
+		for x := 0; x < w; x++ {
+			row[x] = ' '
+		}
+		runes[y] = row
+		styles[y] = make([]erdStyle, w)
+	}
+	return &erdCanvas{w: w, h: h, runes: runes, styles: styles}
+}
+
+func (c *erdCanvas) set(x, y int, ch rune, st erdStyle) {
+	if x < 0 || y < 0 || x >= c.w || y >= c.h {
+		return
+	}
+	c.runes[y][x] = ch
+	c.styles[y][x] = st
+}
+
+func (c *erdCanvas) drawText(x, y int, s string, st erdStyle) {
+	if y < 0 || y >= c.h {
+		return
+	}
+	col := x
+	for _, r := range s {
+		if col >= c.w {
+			break
+		}
+		if col >= 0 {
+			c.runes[y][col] = r
+			c.styles[y][col] = st
+		}
+		col++
+	}
+}
+
+func (c *erdCanvas) drawBox(r erdRect, title string, lines []string, borderSt, titleSt, bodySt erdStyle) {
+	if r.w < 4 || r.h < 3 {
+		return
+	}
+	x0, y0, x1, y1 := r.x, r.y, r.x+r.w-1, r.y+r.h-1
+	c.set(x0, y0, '╭', borderSt)
+	c.set(x1, y0, '╮', borderSt)
+	c.set(x0, y1, '╰', borderSt)
+	c.set(x1, y1, '╯', borderSt)
+	for x := x0 + 1; x < x1; x++ {
+		c.set(x, y0, '─', borderSt)
+		c.set(x, y1, '─', borderSt)
+	}
+	for y := y0 + 1; y < y1; y++ {
+		c.set(x0, y, '│', borderSt)
+		c.set(x1, y, '│', borderSt)
 	}
 
-	// Choose box width so 1-3 boxes fit nicely per row.
-	gap := 2
-	colsPerRow := 1
-	if maxWidth >= 92 && !showFields {
+	innerW := r.w - 4
+	if innerW < 1 {
+		innerW = 1
+	}
+	t := title
+	if lipgloss.Width(t) > innerW {
+		t = ansi.Truncate(t, innerW-1, "…")
+	}
+	c.drawText(x0+2, y0+1, t, titleSt)
+
+	if len(lines) > 0 && r.h >= 5 {
+		c.set(x0, y0+2, '├', borderSt)
+		c.set(x1, y0+2, '┤', borderSt)
+		for x := x0 + 1; x < x1; x++ {
+			c.set(x, y0+2, '─', borderSt)
+		}
+		for i, line := range lines {
+			ly := y0 + 3 + i
+			if ly >= y1 {
+				break
+			}
+			if lipgloss.Width(line) > innerW {
+				line = ansi.Truncate(line, innerW-1, "…")
+			}
+			c.drawText(x0+2, ly, line, bodySt)
+		}
+	}
+}
+
+func mergeBoxRune(existing, incoming rune) rune {
+	if existing == ' ' || existing == incoming {
+		return incoming
+	}
+	mask := func(r rune) int {
+		switch r {
+		case '─':
+			return 0b0011 // L, R
+		case '│':
+			return 0b1100 // U, D
+		case '┌', '╭':
+			return 0b0101 // D, R
+		case '┐', '╮':
+			return 0b0110 // D, L
+		case '└', '╰':
+			return 0b1001 // U, R
+		case '┘', '╯':
+			return 0b1010 // U, L
+		case '├':
+			return 0b1101 // U, D, R
+		case '┤':
+			return 0b1110 // U, D, L
+		case '┬':
+			return 0b0111 // D, L, R
+		case '┴':
+			return 0b1011 // U, L, R
+		case '┼':
+			return 0b1111
+		default:
+			return 0
+		}
+	}
+	m1, m2 := mask(existing), mask(incoming)
+	if m1 == 0 || m2 == 0 {
+		return incoming
+	}
+	switch m1 | m2 {
+	case 0b0011:
+		return '─'
+	case 0b1100:
+		return '│'
+	case 0b0101:
+		return '┌'
+	case 0b0110:
+		return '┐'
+	case 0b1001:
+		return '└'
+	case 0b1010:
+		return '┘'
+	case 0b1101:
+		return '├'
+	case 0b1110:
+		return '┤'
+	case 0b0111:
+		return '┬'
+	case 0b1011:
+		return '┴'
+	case 0b1111:
+		return '┼'
+	default:
+		return incoming
+	}
+}
+
+func (c *erdCanvas) drawLineRune(x, y int, ch rune, st erdStyle) {
+	if x < 0 || y < 0 || x >= c.w || y >= c.h {
+		return
+	}
+	ex := c.runes[y][x]
+	// Don't overwrite box borders/text if something is already there unless it's a line rune.
+	if ex != ' ' && ex != '─' && ex != '│' && ex != '┌' && ex != '┐' && ex != '└' && ex != '┘' && ex != '├' && ex != '┤' && ex != '┬' && ex != '┴' && ex != '┼' {
+		return
+	}
+	c.runes[y][x] = mergeBoxRune(ex, ch)
+	if st > c.styles[y][x] {
+		c.styles[y][x] = st
+	}
+}
+
+func (c *erdCanvas) drawHLine(x1, x2, y int, st erdStyle) {
+	if x1 > x2 {
+		x1, x2 = x2, x1
+	}
+	for x := x1; x <= x2; x++ {
+		c.drawLineRune(x, y, '─', st)
+	}
+}
+
+func (c *erdCanvas) drawVLine(x, y1, y2 int, st erdStyle) {
+	if y1 > y2 {
+		y1, y2 = y2, y1
+	}
+	for y := y1; y <= y2; y++ {
+		c.drawLineRune(x, y, '│', st)
+	}
+}
+
+func (c *erdCanvas) renderWindow(xOffset, yOffset, viewW, viewH int) string {
+	if viewW < 1 {
+		viewW = c.w
+	}
+	if viewH < 1 {
+		viewH = c.h
+	}
+	if xOffset < 0 {
+		xOffset = 0
+	}
+	if yOffset < 0 {
+		yOffset = 0
+	}
+	endY := min(c.h, yOffset+viewH)
+	endX := min(c.w, xOffset+viewW)
+
+	sMuted := styleMutedText
+	sAccent := lipgloss.NewStyle().Bold(true).Foreground(colorAccent)
+	sPrimary := lipgloss.NewStyle().Bold(true).Foreground(colorPrimary)
+	sHighlight := lipgloss.NewStyle().Foreground(colorAccent)
+
+	renderSeg := func(text string, st erdStyle) string {
+		switch st {
+		case erdStyleMuted:
+			return sMuted.Render(text)
+		case erdStyleAccent:
+			return sAccent.Render(text)
+		case erdStylePrimary:
+			return sPrimary.Render(text)
+		case erdStyleHighlight:
+			return sHighlight.Render(text)
+		default:
+			return text
+		}
+	}
+
+	var b strings.Builder
+	for y := yOffset; y < endY; y++ {
+		if y > yOffset {
+			b.WriteByte('\n')
+		}
+		if xOffset >= c.w {
+			continue
+		}
+		// Trim trailing spaces on each visible row for cleaner output.
+		rowEnd := endX
+		for rowEnd > xOffset && c.runes[y][rowEnd-1] == ' ' {
+			rowEnd--
+		}
+		if rowEnd <= xOffset {
+			continue
+		}
+		curStyle := c.styles[y][xOffset]
+		var seg strings.Builder
+		for x := xOffset; x < rowEnd; x++ {
+			st := c.styles[y][x]
+			if st != curStyle {
+				b.WriteString(renderSeg(seg.String(), curStyle))
+				seg.Reset()
+				curStyle = st
+			}
+			seg.WriteRune(c.runes[y][x])
+		}
+		if seg.Len() > 0 {
+			b.WriteString(renderSeg(seg.String(), curStyle))
+		}
+	}
+	return b.String()
+}
+
+type erdLayoutResult struct {
+	canvas     *erdCanvas
+	rects      map[string]erdRect
+	cursorRect erdRect
+}
+
+func orderTablesForERD(tables []string, graph *tableSchemaGraph) []string {
+	if graph == nil || len(graph.relations) == 0 || len(tables) <= 2 {
+		return tables
+	}
+	adj := make(map[string][]string, len(tables))
+	inDeg := make(map[string]int, len(tables))
+	for _, t := range tables {
+		inDeg[t] = 0
+	}
+	for _, r := range graph.relations {
+		adj[r.toTable] = append(adj[r.toTable], r.fromTable)
+		adj[r.fromTable] = append(adj[r.fromTable], r.toTable)
+		inDeg[r.fromTable]++
+	}
+
+	visited := make(map[string]bool, len(tables))
+	ordered := make([]string, 0, len(tables))
+
+	// Visit connected tables starting from roots (tables with relationships and lowest in-degree).
+	bfs := func(start string) {
+		queue := []string{start}
+		visited[start] = true
+		for len(queue) > 0 {
+			cur := queue[0]
+			queue = queue[1:]
+			ordered = append(ordered, cur)
+			for _, nb := range adj[cur] {
+				if !visited[nb] {
+					visited[nb] = true
+					queue = append(queue, nb)
+				}
+			}
+		}
+	}
+
+	for _, t := range tables {
+		if !visited[t] && len(adj[t]) > 0 && inDeg[t] == 0 {
+			bfs(t)
+		}
+	}
+	for _, t := range tables {
+		if !visited[t] && len(adj[t]) > 0 {
+			bfs(t)
+		}
+	}
+	for _, t := range tables {
+		if !visited[t] {
+			ordered = append(ordered, t)
+		}
+	}
+	return ordered
+}
+
+func buildTableOverviewERD(tables []string, graph *tableSchemaGraph, cursor int, focused bool, showFields bool) *erdLayoutResult {
+	return buildTableOverviewERDWithZoom(tables, graph, cursor, focused, showFields, 1)
+}
+
+func buildTableOverviewERDWithZoom(tables []string, graph *tableSchemaGraph, cursor int, focused bool, showFields bool, zoom int) *erdLayoutResult {
+	if len(tables) == 0 {
+		return &erdLayoutResult{canvas: newERDCanvas(1, 1), rects: map[string]erdRect{}}
+	}
+	if zoom < 0 {
+		zoom = 0
+	} else if zoom > 2 {
+		zoom = 2
+	}
+
+	ordered := orderTablesForERD(tables, graph)
+	selectedName := ""
+	if cursor >= 0 && cursor < len(tables) {
+		selectedName = tables[cursor]
+	}
+
+	boxW := 32
+	compactW := 26
+	colGap := 12
+	rowGap := 3
+	colsPerRow := 2
+	if len(ordered) >= 7 {
 		colsPerRow = 3
-	} else if maxWidth >= 60 {
-		colsPerRow = 2
-	}
-	if !showFields && maxWidth >= 60 && colsPerRow < 2 {
-		colsPerRow = 2
-	}
-	boxW := (maxWidth - gap*(colsPerRow-1)) / colsPerRow
-	if boxW < 22 {
-		colsPerRow = 1
-		boxW = maxWidth
-	}
-	if boxW > 44 {
-		boxW = 44
 	}
 
-	renderCard := func(idx int, tName string) string {
+	switch zoom {
+	case 0: // Zoom out (overview minimap)
+		boxW = 22
+		compactW = 22
+		colGap = 6
+		rowGap = 2
+		colsPerRow = 3
+		if len(ordered) >= 10 {
+			colsPerRow = 4
+		}
+	case 2: // Zoom in (detailed)
+		boxW = 46
+		compactW = 32
+		colGap = 14
+		rowGap = 4
+		colsPerRow = 2
+	}
+	if len(ordered) == 1 {
+		colsPerRow = 1
+	}
+
+	effectiveShowFields := showFields && zoom > 0
+
+	type cardData struct {
+		name  string
+		title string
+		lines []string
+		w, h  int
+	}
+
+	cards := make([]cardData, len(ordered))
+	for i, tName := range ordered {
 		var cols []tableColumnInfo
 		if graph != nil {
 			if ov := graph.byName[tName]; ov != nil {
 				cols = ov.columns
 			}
 		}
-
-		selected := focused && idx == cursor
-		borderColor := colorMuted
-		titleColor := colorAccent
-		marker := ""
-		if selected {
-			borderColor = colorPrimary
-			titleColor = colorPrimary
-			marker = "▸ "
+		title := tName
+		if focused && tName == selectedName {
+			title = "▸ " + tName
 		}
 
-		innerW := max(12, boxW-4)
-		title := marker + tName
-		if lipgloss.Width(title) > innerW {
-			title = ansi.Truncate(title, innerW-1, "…")
-		}
-
-		var body strings.Builder
-		body.WriteString(lipgloss.NewStyle().Bold(true).Foreground(titleColor).Render(title))
-
-		if showFields {
+		var lines []string
+		if effectiveShowFields {
 			if len(cols) == 0 {
-				body.WriteString("\n" + styleMutedText.Render("(no columns)"))
+				lines = []string{"(no columns)"}
 			} else {
-				for _, col := range cols {
-					keyTag := "  "
-					if strings.Contains(col.key, "PK") {
-						keyTag = "PK"
-					} else if strings.Contains(col.key, "FK") {
-						keyTag = "FK"
+				innerW := boxW - 4
+				if zoom == 2 {
+					nameW := max(10, innerW-22)
+					for _, col := range cols {
+						keyTag := "  "
+						if strings.Contains(col.key, "PK") {
+							keyTag = "PK"
+						} else if strings.Contains(col.key, "FK") {
+							keyTag = "FK"
+						} else if col.key == "UNI" {
+							keyTag = "UQ"
+						}
+						cName := col.name
+						if lipgloss.Width(cName) > nameW {
+							cName = ansi.Truncate(cName, nameW-1, "…")
+						}
+						dType := col.dataType
+						if lipgloss.Width(dType) > 12 {
+							dType = ansi.Truncate(dType, 11, "…")
+						}
+						nullTag := "NN"
+						if col.nullable {
+							nullTag = "NULL"
+						}
+						lines = append(lines, fmt.Sprintf("%s %-*s %-12s %s", keyTag, nameW, cName, dType, nullTag))
 					}
-					nameW := max(6, innerW-13)
-					cName := col.name
-					if lipgloss.Width(cName) > nameW {
-						cName = ansi.Truncate(cName, nameW-1, "…")
+				} else {
+					nameW := max(8, innerW-12)
+					for _, col := range cols {
+						keyTag := "  "
+						if strings.Contains(col.key, "PK") {
+							keyTag = "PK"
+						} else if strings.Contains(col.key, "FK") {
+							keyTag = "FK"
+						} else if col.key == "UNI" {
+							keyTag = "UQ"
+						}
+						cName := col.name
+						if lipgloss.Width(cName) > nameW {
+							cName = ansi.Truncate(cName, nameW-1, "…")
+						}
+						dType := col.dataType
+						if lipgloss.Width(dType) > 8 {
+							dType = ansi.Truncate(dType, 7, "…")
+						}
+						lines = append(lines, fmt.Sprintf("%s %-*s %s", keyTag, nameW, cName, dType))
 					}
-					dType := col.dataType
-					if lipgloss.Width(dType) > 8 {
-						dType = ansi.Truncate(dType, 7, "…")
-					}
-					rowLine := fmt.Sprintf("%s %-*s %s", keyTag, nameW, cName, dType)
-					if lipgloss.Width(rowLine) > innerW {
-						rowLine = ansi.Truncate(rowLine, innerW-1, "…")
-					}
-					body.WriteString("\n" + rowLine)
 				}
 			}
+			// Header (3 lines: top, title, sep) + len(lines) + bottom border (1)
+			cards[i] = cardData{name: tName, title: title, lines: lines, w: boxW, h: 4 + len(lines)}
 		} else {
 			sub := fmt.Sprintf("(%d fields)", len(cols))
-			body.WriteString("\n" + styleMutedText.Render(sub))
+			lines = []string{sub}
+			cards[i] = cardData{name: tName, title: title, lines: lines, w: compactW, h: 5}
 		}
-
-		box := lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderColor).
-			Width(boxW - 2).
-			Padding(0, 1).
-			Render(body.String())
-		return box
 	}
 
-	var out strings.Builder
-	lineNo := 0
-	cursorLine := 0
-
-	for start := 0; start < len(tables); start += colsPerRow {
-		end := min(len(tables), start+colsPerRow)
-		cards := make([]string, 0, end-start)
-		hasCursor := false
-		for i := start; i < end; i++ {
-			if i == cursor {
-				hasCursor = true
-			}
-			cards = append(cards, renderCard(i, tables[i]))
+	numRows := (len(cards) + colsPerRow - 1) / colsPerRow
+	rowHeights := make([]int, numRows)
+	colWidths := make([]int, colsPerRow)
+	for i, cd := range cards {
+		r := i / colsPerRow
+		c := i % colsPerRow
+		if cd.h > rowHeights[r] {
+			rowHeights[r] = cd.h
 		}
-		if hasCursor {
-			cursorLine = lineNo
+		if cd.w > colWidths[c] {
+			colWidths[c] = cd.w
 		}
-		rowStr := lipgloss.JoinHorizontal(lipgloss.Top, joinWithGap(cards, strings.Repeat(" ", gap))...)
-		out.WriteString(rowStr + "\n")
-		lineNo += strings.Count(rowStr, "\n") + 1
 	}
 
+	const marginX = 2
+	const marginY = 1
+	colX := make([]int, colsPerRow)
+	curX := marginX
+	for c := 0; c < colsPerRow; c++ {
+		colX[c] = curX
+		curX += colWidths[c] + colGap
+	}
+	rowY := make([]int, numRows)
+	curY := marginY
+	for r := 0; r < numRows; r++ {
+		rowY[r] = curY
+		curY += rowHeights[r] + rowGap
+	}
+
+	canvasW := curX + 4
+	canvasH := curY + 2
+	canvas := newERDCanvas(canvasW, canvasH)
+	rects := make(map[string]erdRect, len(cards))
+	var cursorRect erdRect
+
+	for i, cd := range cards {
+		r := i / colsPerRow
+		c := i % colsPerRow
+		rect := erdRect{x: colX[c], y: rowY[r], w: cd.w, h: cd.h}
+		rects[cd.name] = rect
+		if cd.name == selectedName {
+			cursorRect = rect
+		}
+
+		borderSt := erdStyleMuted
+		titleSt := erdStyleAccent
+		bodySt := erdStyleNormal
+		if focused && cd.name == selectedName {
+			borderSt = erdStylePrimary
+			titleSt = erdStylePrimary
+		}
+		if !effectiveShowFields {
+			bodySt = erdStyleMuted
+		}
+		canvas.drawBox(rect, cd.title, cd.lines, borderSt, titleSt, bodySt)
+	}
+
+	// Route orthogonal ERD connectors with cardinality markers.
 	if graph != nil && len(graph.relations) > 0 {
-		out.WriteString("\n" + lipgloss.NewStyle().Bold(true).Foreground(colorAccent).Render("Relationships") + "\n")
-		seen := make(map[string]bool)
-		for _, rel := range graph.relations {
-			var line string
-			if showFields {
-				line = fmt.Sprintf("  %s.%s ──▶ %s.%s", rel.fromTable, rel.fromCol, rel.toTable, rel.toCol)
-			} else {
-				line = fmt.Sprintf("  %s ──▶ %s", rel.fromTable, rel.toTable)
+		colIndexOf := func(tName, colName string) int {
+			if !effectiveShowFields {
+				return -1
 			}
-			if seen[line] {
+			ov := graph.byName[tName]
+			if ov == nil {
+				return -1
+			}
+			for idx, col := range ov.columns {
+				if col.name == colName {
+					return idx
+				}
+			}
+			return -1
+		}
+
+		portY := func(tName, colName string, rect erdRect) int {
+			idx := colIndexOf(tName, colName)
+			if idx >= 0 && rect.y+3+idx < rect.y+rect.h-1 {
+				return rect.y + 3 + idx
+			}
+			return rect.y + rect.h/2
+		}
+
+		seen := make(map[string]bool)
+		for edgeIdx, rel := range graph.relations {
+			key := fmt.Sprintf("%s.%s->%s.%s", rel.fromTable, rel.fromCol, rel.toTable, rel.toCol)
+			if seen[key] {
 				continue
 			}
-			seen[line] = true
-			if lipgloss.Width(line) > maxWidth {
-				line = ansi.Truncate(line, maxWidth-1, "…")
+			seen[key] = true
+
+			fromRect, ok1 := rects[rel.fromTable]
+			toRect, ok2 := rects[rel.toTable]
+			if !ok1 || !ok2 {
+				continue
 			}
-			out.WriteString(styleMutedText.Render(line) + "\n")
+
+			st := erdStyleMuted
+			if focused && (rel.fromTable == selectedName || rel.toTable == selectedName) {
+				st = erdStyleHighlight
+			}
+
+			fy := portY(rel.fromTable, rel.fromCol, fromRect)
+			ty := portY(rel.toTable, rel.toCol, toRect)
+
+			lane := 2 + (edgeIdx%4)*2
+
+			// Choose horizontal exit/entry sides based on relative box positions.
+			if fromRect.x+fromRect.w <= toRect.x {
+				// fromTable is to the left of toTable
+				fx := fromRect.x + fromRect.w
+				tx := toRect.x - 1
+				midX := min(tx-2, fx+lane)
+				if midX <= fx {
+					midX = (fx + tx) / 2
+				}
+				canvas.drawHLine(fx, midX, fy, st)
+				canvas.drawVLine(midX, fy, ty, st)
+				canvas.drawHLine(midX, tx, ty, st)
+
+				// Cardinality: from (FK) side on left, to (PK) side on right
+				if rel.isOneToOne {
+					canvas.set(fx, fy, '|', st)
+					canvas.set(fx+1, fy, '|', st)
+				} else {
+					canvas.set(fx, fy, '<', st)
+				}
+				canvas.set(tx, ty, '|', st)
+				if tx-1 > midX {
+					canvas.set(tx-1, ty, '|', st)
+				}
+			} else if toRect.x+toRect.w <= fromRect.x {
+				// toTable is to the left of fromTable
+				fx := fromRect.x - 1
+				tx := toRect.x + toRect.w
+				midX := max(tx+2, fx-lane)
+				if midX >= fx {
+					midX = (fx + tx) / 2
+				}
+				canvas.drawHLine(midX, fx, fy, st)
+				canvas.drawVLine(midX, fy, ty, st)
+				canvas.drawHLine(tx, midX, ty, st)
+
+				if rel.isOneToOne {
+					canvas.set(fx, fy, '|', st)
+					canvas.set(fx-1, fy, '|', st)
+				} else {
+					canvas.set(fx, fy, '>', st)
+				}
+				canvas.set(tx, ty, '|', st)
+				if tx+1 < midX {
+					canvas.set(tx+1, ty, '|', st)
+				}
+			} else {
+				// Same column (stacked vertically): route through right gutter channel.
+				fx := fromRect.x + fromRect.w
+				tx := toRect.x + toRect.w
+				chanX := max(fx, tx) + lane
+				if chanX >= canvas.w-1 {
+					chanX = canvas.w - 2
+				}
+				canvas.drawHLine(fx, chanX, fy, st)
+				canvas.drawVLine(chanX, fy, ty, st)
+				canvas.drawHLine(tx, chanX, ty, st)
+
+				if rel.isOneToOne {
+					canvas.set(fx, fy, '|', st)
+					canvas.set(fx+1, fy, '|', st)
+				} else {
+					canvas.set(fx, fy, '<', st)
+				}
+				canvas.set(tx, ty, '|', st)
+				if tx+1 < chanX {
+					canvas.set(tx+1, ty, '|', st)
+				}
+			}
 		}
 	}
 
-	return out.String(), cursorLine
+	return &erdLayoutResult{
+		canvas:     canvas,
+		rects:      rects,
+		cursorRect: cursorRect,
+	}
+}
+
+func formatTableOverviewDiagram(tables []string, graph *tableSchemaGraph, cursor int, focused bool, showFields bool, maxWidth int) (string, int) {
+	res := buildTableOverviewERD(tables, graph, cursor, focused, showFields)
+	if res == nil || res.canvas == nil {
+		return "", 0
+	}
+	return res.canvas.renderWindow(0, 0, max(maxWidth, res.canvas.w), res.canvas.h), res.cursorRect.y
 }
 
 func joinWithGap(items []string, gap string) []string {

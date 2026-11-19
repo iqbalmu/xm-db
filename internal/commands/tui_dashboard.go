@@ -132,6 +132,10 @@ type dashboardModel struct {
 	tableDetailVP    viewport.Model
 	tableViewDiagram bool
 	tableShowFields  bool
+	erdXOffset       int
+	erdYOffset       int
+	erdZoom          int // 0=50% (out), 1=100% (normal), 2=150% (in)
+	erdLayout        *erdLayoutResult
 
 	// Query tab
 	queryInput  textinput.Model
@@ -185,10 +189,12 @@ func newDashboardModel() dashboardModel {
 		filterInput:     fi,
 		logSearchInput:  lsi,
 		queryInput:      qi,
-		logsVP:          viewport.New(50, 18),
-		tableOverviewVP: viewport.New(50, 18),
-		tableDetailVP:   viewport.New(50, 18),
-		tableShowFields: true,
+		logsVP:           viewport.New(50, 18),
+		tableOverviewVP:  viewport.New(50, 18),
+		tableDetailVP:    viewport.New(50, 18),
+		tableViewDiagram: true,
+		tableShowFields:  true,
+		erdZoom:          1,
 		queryVP:         viewport.New(50, 14),
 		logFollow:       true,
 		spinner:         sp,
@@ -712,6 +718,9 @@ func (m *dashboardModel) resetRightSubstate() {
 	m.tableDetail = nil
 	m.tableSchema = nil
 	m.tableCursor = 0
+	m.erdXOffset = 0
+	m.erdYOffset = 0
+	m.erdLayout = nil
 	m.detailErr = nil
 	m.queryResult = nil
 	m.queryErr = nil
@@ -1022,6 +1031,57 @@ func (m dashboardModel) handleNormalKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "pgdown", "ctrl+d":
 		return m.scrollRight(8)
 
+	case "shift+left":
+		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable == "" && m.tableViewDiagram {
+			m.panERD(-8, 0)
+			return m, nil
+		}
+
+	case "shift+right":
+		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable == "" && m.tableViewDiagram {
+			m.panERD(8, 0)
+			return m, nil
+		}
+
+	case "shift+up":
+		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable == "" && m.tableViewDiagram {
+			m.panERD(0, -3)
+			return m, nil
+		}
+
+	case "shift+down":
+		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable == "" && m.tableViewDiagram {
+			m.panERD(0, 3)
+			return m, nil
+		}
+
+	case "+", "=":
+		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable == "" && m.tableViewDiagram {
+			if m.erdZoom < 2 {
+				m.erdZoom++
+				m.renderTableOverviewToVP()
+			}
+			return m, nil
+		}
+
+	case "-":
+		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable == "" && m.tableViewDiagram {
+			if m.erdZoom > 0 {
+				m.erdZoom--
+				m.renderTableOverviewToVP()
+			}
+			return m, nil
+		}
+
+	case "0":
+		if m.focusPane == 1 && m.activeTab == 2 && m.selectedTable == "" && m.tableViewDiagram {
+			m.erdZoom = 1
+			m.erdXOffset = 0
+			m.erdYOffset = 0
+			m.renderTableOverviewToVP()
+			return m, nil
+		}
+
 	case "enter", " ":
 		if m.focusPane == 0 {
 			if row := m.selectedRow(); row != nil && row.isGroup {
@@ -1329,20 +1389,50 @@ func (m dashboardModel) handleMouse(msg tea.MouseMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *dashboardModel) panERD(dx, dy int) {
+	if m.erdLayout == nil || m.erdLayout.canvas == nil {
+		return
+	}
+	viewW := max(24, m.tableOverviewVP.Width)
+	viewH := max(4, m.tableOverviewVP.Height)
+	maxX := max(0, m.erdLayout.canvas.w-viewW)
+	maxY := max(0, m.erdLayout.canvas.h-viewH)
+	m.erdXOffset = max(0, min(maxX, m.erdXOffset+dx))
+	m.erdYOffset = max(0, min(maxY, m.erdYOffset+dy))
+}
+
 func (m *dashboardModel) renderTableOverviewToVP() {
 	if len(m.detailTables) == 0 {
+		m.erdLayout = nil
 		m.tableOverviewVP.SetContent(styleMutedText.Render("(no tables found)"))
 		return
 	}
 	w := max(24, m.tableOverviewVP.Width)
+	h := max(4, m.tableOverviewVP.Height)
 	focused := m.focusPane == 1
-	var content string
-	var cursorLine int
 	if m.tableViewDiagram {
-		content, cursorLine = formatTableOverviewDiagram(m.detailTables, m.tableSchema, m.tableCursor, focused, m.tableShowFields, w)
-	} else {
-		content, cursorLine = formatTableOverviewList(m.detailTables, m.tableSchema, m.tableCursor, focused, m.tableShowFields, w)
+		m.erdLayout = buildTableOverviewERDWithZoom(m.detailTables, m.tableSchema, m.tableCursor, focused, m.tableShowFields, m.erdZoom)
+		if m.erdLayout != nil && m.erdLayout.canvas != nil {
+			cr := m.erdLayout.cursorRect
+			if cr.w > 0 && cr.h > 0 {
+				if cr.x < m.erdXOffset {
+					m.erdXOffset = max(0, cr.x-2)
+				} else if cr.x+cr.w > m.erdXOffset+w {
+					m.erdXOffset = max(0, cr.x+cr.w-w+2)
+				}
+				if cr.y < m.erdYOffset {
+					m.erdYOffset = max(0, cr.y-1)
+				} else if cr.y+cr.h > m.erdYOffset+h {
+					m.erdYOffset = max(0, cr.y+cr.h-h+1)
+				}
+			}
+			m.panERD(0, 0)
+		}
+		return
 	}
+
+	m.erdLayout = nil
+	content, cursorLine := formatTableOverviewList(m.detailTables, m.tableSchema, m.tableCursor, focused, m.tableShowFields, w)
 	m.tableOverviewVP.SetContent(content)
 	// Keep selected table/card visible within viewport.
 	if m.tableOverviewVP.Height > 0 {
@@ -1646,9 +1736,27 @@ func (m dashboardModel) renderTablesTab() string {
 		return styleMutedText.Render("(no tables found)")
 	}
 	var b strings.Builder
-	status := fmt.Sprintf("%s  %s  •  Enter: inspect  •  v: view  •  f: fields", viewBadge, fieldsBadge)
-	b.WriteString(styleMutedText.Render(status) + "\n")
-	b.WriteString(m.tableOverviewVP.View())
+	if m.tableViewDiagram {
+		zoomLabel := "100%"
+		switch m.erdZoom {
+		case 0:
+			zoomLabel = "50%"
+		case 2:
+			zoomLabel = "150%"
+		}
+		zoomBadge := styleBadgeRun.Render("zoom:" + zoomLabel)
+		status := fmt.Sprintf("%s  %s  %s  •  +/-: zoom  •  Shift+Arrows: pan  •  v: view  •  f: fields", viewBadge, fieldsBadge, zoomBadge)
+		b.WriteString(styleMutedText.Render(status) + "\n")
+		if m.erdLayout != nil && m.erdLayout.canvas != nil {
+			w := max(24, m.tableOverviewVP.Width)
+			h := max(4, m.tableOverviewVP.Height)
+			b.WriteString(m.erdLayout.canvas.renderWindow(m.erdXOffset, m.erdYOffset, w, h))
+		}
+	} else {
+		status := fmt.Sprintf("%s  %s  •  Enter: inspect  •  v: view  •  f: fields", viewBadge, fieldsBadge)
+		b.WriteString(styleMutedText.Render(status) + "\n")
+		b.WriteString(m.tableOverviewVP.View())
+	}
 	return b.String()
 }
 
@@ -1712,6 +1820,9 @@ func (m dashboardModel) footerHelpText() string {
 	case 2:
 		if m.selectedTable != "" {
 			return "  [Table Detail] ↑/↓: scroll  •  v: view  •  f: fields  •  Esc: back  •  1-4/Tab: tab  •  ?: help  •  q: quit"
+		}
+		if m.tableViewDiagram {
+			return "  [Tables ERD] ↑/↓: select  •  +/-: zoom  •  Shift+Arrows: pan  •  Enter: inspect  •  v: view  •  f: fields  •  ←/Esc: sidebar  •  ?: help  •  q: quit"
 		}
 		return "  [Tables] ↑/↓: select  •  Enter: inspect  •  v: view  •  f: fields  •  ←/Esc: sidebar  •  1-4/Tab: tab  •  ?: help  •  q: quit"
 	case 3:

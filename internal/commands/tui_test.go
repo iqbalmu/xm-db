@@ -332,17 +332,20 @@ func TestTablesViewAndFieldsToggles(t *testing.T) {
 		t.Fatalf("expected table names in list view without fields, got:\n%s", listNoFields)
 	}
 
-	// Overview diagram with fields ON vs OFF
+	// Overview 2D ERD diagram with fields ON vs OFF
 	diagWithFields, _ := formatTableOverviewDiagram(tables, graph, 0, true, true, 90)
-	if !strings.Contains(diagWithFields, "email") || !strings.Contains(diagWithFields, "orders.user_id ──▶ users.id") {
-		t.Fatalf("expected fields and column-level FK in diagram view, got:\n%s", diagWithFields)
+	if !strings.Contains(diagWithFields, "email") || !strings.Contains(diagWithFields, "user_id") {
+		t.Fatalf("expected fields in 2D ERD diagram view, got:\n%s", diagWithFields)
+	}
+	if !strings.Contains(diagWithFields, "╭") || (!strings.Contains(diagWithFields, ">") && !strings.Contains(diagWithFields, "<")) {
+		t.Fatalf("expected ERD boxes and crow's foot cardinality connector in diagram view, got:\n%s", diagWithFields)
 	}
 	diagNoFields, _ := formatTableOverviewDiagram(tables, graph, 0, true, false, 90)
-	if strings.Contains(diagNoFields, "email") || strings.Contains(diagNoFields, "orders.user_id") {
-		t.Fatalf("expected fields hidden in diagram view, got:\n%s", diagNoFields)
+	if strings.Contains(diagNoFields, "email") || strings.Contains(diagNoFields, "user_id") {
+		t.Fatalf("expected fields hidden in 2D ERD diagram view, got:\n%s", diagNoFields)
 	}
-	if !strings.Contains(diagNoFields, "orders ──▶ users") {
-		t.Fatalf("expected table-level FK in diagram view without fields, got:\n%s", diagNoFields)
+	if !strings.Contains(diagNoFields, "(2 fields)") || (!strings.Contains(diagNoFields, ">") && !strings.Contains(diagNoFields, "<")) {
+		t.Fatalf("expected field count and ERD connector when fields=off, got:\n%s", diagNoFields)
 	}
 
 	// Detail diagram with fields ON vs OFF
@@ -376,18 +379,48 @@ func TestTablesViewAndFieldsToggles(t *testing.T) {
 	m.tableDetail = detail
 	m.renderTableOverviewToVP()
 
-	if m.tableViewDiagram {
-		t.Fatalf("expected tableViewDiagram=false initially")
+	if !m.tableViewDiagram {
+		t.Fatalf("expected tableViewDiagram=true initially")
 	}
 	if !m.tableShowFields {
 		t.Fatalf("expected tableShowFields=true initially")
 	}
+	if m.erdZoom != 1 {
+		t.Fatalf("expected initial erdZoom=1, got %d", m.erdZoom)
+	}
 
-	// Press 'v' -> diagram
+	// Press 'v' -> list/table, then 'v' -> diagram
 	next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	m = next.(dashboardModel)
+	if m.tableViewDiagram {
+		t.Fatalf("expected tableViewDiagram=false after 'v'")
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
+	m = next.(dashboardModel)
 	if !m.tableViewDiagram {
-		t.Fatalf("expected tableViewDiagram=true after 'v'")
+		t.Fatalf("expected tableViewDiagram=true after second 'v'")
+	}
+
+	// Zoom in ('+'), zoom out ('-'), reset ('0')
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'+'}})
+	m = next.(dashboardModel)
+	if m.erdZoom != 2 {
+		t.Fatalf("expected erdZoom=2 after '+', got %d", m.erdZoom)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+	m = next.(dashboardModel)
+	if m.erdZoom != 1 {
+		t.Fatalf("expected erdZoom=1 after '-', got %d", m.erdZoom)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'-'}})
+	m = next.(dashboardModel)
+	if m.erdZoom != 0 {
+		t.Fatalf("expected erdZoom=0 after second '-', got %d", m.erdZoom)
+	}
+	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'0'}})
+	m = next.(dashboardModel)
+	if m.erdZoom != 1 {
+		t.Fatalf("expected erdZoom=1 after '0', got %d", m.erdZoom)
 	}
 
 	// Press 'f' -> fields off
@@ -437,7 +470,7 @@ func TestDynamicPaneKeybinds(t *testing.T) {
 	m.activeTab = 2
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'v'}})
 	m = next.(dashboardModel)
-	if m.tableViewDiagram {
+	if !m.tableViewDiagram {
 		t.Fatalf("expected 'v' ignored when focusPane=0")
 	}
 	next, _ = m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{'f'}})
@@ -490,8 +523,8 @@ func TestDynamicPaneKeybinds(t *testing.T) {
 		t.Fatalf("expected [Logs] footer, got: %s", m.footerHelpText())
 	}
 	m.activeTab = 2
-	if !strings.Contains(m.footerHelpText(), "[Tables]") {
-		t.Fatalf("expected [Tables] footer, got: %s", m.footerHelpText())
+	if !strings.Contains(m.footerHelpText(), "[Tables ERD]") {
+		t.Fatalf("expected [Tables ERD] footer, got: %s", m.footerHelpText())
 	}
 	m.selectedTable = "users"
 	if !strings.Contains(m.footerHelpText(), "[Table Detail]") {
