@@ -183,22 +183,22 @@ func newDashboardModel() dashboardModel {
 	sp.Style = lipgloss.NewStyle().Foreground(colorWarning)
 
 	return dashboardModel{
-		width:           100,
-		height:          30,
-		collapsedGroups: make(map[string]bool),
-		filterInput:     fi,
-		logSearchInput:  lsi,
-		queryInput:      qi,
+		width:            100,
+		height:           30,
+		collapsedGroups:  make(map[string]bool),
+		filterInput:      fi,
+		logSearchInput:   lsi,
+		queryInput:       qi,
 		logsVP:           viewport.New(50, 18),
 		tableOverviewVP:  viewport.New(50, 18),
 		tableDetailVP:    viewport.New(50, 18),
 		tableViewDiagram: true,
 		tableShowFields:  true,
 		erdZoom:          1,
-		queryVP:         viewport.New(50, 14),
-		logFollow:       true,
-		spinner:         sp,
-		busy:            "Loading databases...",
+		queryVP:          viewport.New(50, 14),
+		logFollow:        true,
+		spinner:          sp,
+		busy:             "Loading databases...",
 	}
 }
 

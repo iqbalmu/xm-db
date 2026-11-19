@@ -149,7 +149,9 @@ Running `xmdb` without arguments opens the terminal dashboard:
     visibility, `c` copies connection string).
   - `2` **Logs**: live container logs (`f` toggles auto-follow, `/` searches
     logs, `n`/`N` jumps between matches).
-  - `3` **Tables**: browse tables and press `Enter` to inspect schema and rows.
+  - `3` **Tables**: browse tables in an interactive 2D ERD diagram (default) or
+    list view (`v` toggles diagram/list, `f` toggles fields, `+`/`-`/`0` zooms,
+    `Shift+arrows` pans, `Enter` inspects schema and rows).
   - `4` **Query**: press `i` or `Enter` to write and execute SQL inline.
 - **Actions**: `s` start/stop database or group, `n` create database, `x` open
   SQL shell, `b` backup, `L` restore, `R` reset, `d` remove, `r` refresh, `?`

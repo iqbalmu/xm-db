@@ -1283,7 +1283,7 @@ func formatTableDetailDiagram(detail *tableDetail, graph *tableSchemaGraph, show
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(colorPrimary).
-		Width(boxW - 2).
+		Width(boxW-2).
 		Padding(0, 1).
 		Render(body.String())
 
